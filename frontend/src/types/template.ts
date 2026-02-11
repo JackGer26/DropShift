@@ -17,7 +17,8 @@ export interface DayTemplate {
 
 // Represents a full rota template for a week
 export interface RotaTemplate {
-	id: string;
+	_id: string;
+	id?: string;
 	name: string;
 	locationId?: string; // Optional location for the template
 	days: DayTemplate[];

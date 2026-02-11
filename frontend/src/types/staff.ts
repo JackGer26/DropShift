@@ -7,7 +7,8 @@ export enum Role {
 
 // Represents a staff member
 export interface Staff {
-	id: string; // MongoDB string ID
+	_id: string;
+	id?: string; // MongoDB string ID
 	name: string;
 	role: Role;
 	locationIds: string[]; // IDs of locations where staff can work
