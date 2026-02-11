@@ -1,0 +1,30 @@
+node_modules/
+
+# Build outputs
+/dist/
+/build/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.*
+
+# Vite
+frontend/.vite/
+
+# TypeScript
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+frontend/src/assets/
+backend/src/controllers/
