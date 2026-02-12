@@ -1,9 +1,15 @@
 import { Router } from 'express';
 
+import staffRoutes from './staff.routes';
+import templateRoutes from './template.routes';
+
 const router = Router();
 
 router.get('/test', (req, res) => {
   res.json({ message: 'API test successful' });
 });
+
+router.use('/staff', staffRoutes);
+router.use('/templates', templateRoutes);
 
 export default router;
