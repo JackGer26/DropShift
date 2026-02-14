@@ -15,6 +15,9 @@ export function Templates() {
   const [showBuilder, setShowBuilder] = useState(false);
   const [builderDays, setBuilderDays] = useState<DayTemplate[]>([]);
 
+  // Set your default locationId here (should be a valid 24-char ObjectId)
+  const DEFAULT_LOCATION_ID = '699094c87ec69da4f15fc047';
+
   useEffect(() => {
     loadTemplates();
   }, []);
@@ -31,7 +34,7 @@ export function Templates() {
   }
 
   async function handleSaveTemplate() {
-    await createTemplate({ name, days: builderDays });
+    await createTemplate({ name, locationId: DEFAULT_LOCATION_ID, days: builderDays });
     setName('');
     setShowBuilder(false);
     setBuilderDays([]);

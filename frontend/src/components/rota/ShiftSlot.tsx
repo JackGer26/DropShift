@@ -7,13 +7,15 @@ import { Staff } from '../../types/staff';
 type ShiftSlotProps = {
   shift: ShiftTemplate | RotaShift;
   staff?: Staff[];
+  dayOfWeek?: number;
+  onSelectShift?: (shiftTemplateId: string, dayOfWeek: number) => void;
 };
 
-export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff }) => {
+export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff, dayOfWeek, onSelectShift }) => {
   const [invalidDrop, setInvalidDrop] = useState(false);
-  const slotRef = useRef<HTMLDivElement>(null);
+  const droppableId = String((shift as any).shiftTemplateId || shift.id);
   const { isOver, setNodeRef, active } = useDroppable({
-    id: shift.id,
+    id: droppableId,
   });
 
   // If shift has assignedStaffIds and staff list is provided, map ids to names
@@ -80,10 +82,7 @@ export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff }) => {
 
   return (
     <div
-      ref={el => {
-        setNodeRef(el);
-        slotRef.current = el;
-      }}
+      ref={setNodeRef}
       style={{
         ...borderStyle,
         ...shakeStyle,
@@ -91,6 +90,12 @@ export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff }) => {
         marginBottom: '8px',
         background: isOver ? '#e0f7fa' : '#fff',
         transition: 'border 0.2s, box-shadow 0.2s',
+        cursor: onSelectShift ? 'pointer' : undefined,
+      }}
+      onClick={() => {
+        if (onSelectShift && (shift as any).shiftTemplateId && typeof dayOfWeek === 'number') {
+          onSelectShift((shift as any).shiftTemplateId, dayOfWeek);
+        }
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

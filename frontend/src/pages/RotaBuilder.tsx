@@ -4,9 +4,15 @@ import { fetchStaff } from '../services/staff.service';
 import { fetchTemplates } from '../services/template.service';
 import { Staff } from '../types/staff';
 import { RotaTemplate } from '../types/template';
-import { RotaDay } from '../types/rota';
+import { RotaDay, Rota } from '../types/rota';
 import { StaffCard } from '../components/rota/StaffCard';
 import ShiftSlot from '../components/rota/ShiftSlot';
+import { createRota as createRotaApi, updateRota as updateRotaApi, fetchRotas } from '../services/rota.service';
+import { isOverlapping } from '../utils/isOverlapping';
+import { getSuggestedStaff } from '../utils/getSuggestedStaff';
+
+import { calculateWeeklyHours } from '../utils/calculateWeeklyHours';
+import { getStartOfWeek, getNextWeek, getPreviousWeek } from '../utils/weekUtils';
 
 export function RotaBuilder() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -14,34 +20,49 @@ export function RotaBuilder() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [selectedTemplate, setSelectedTemplate] = useState<RotaTemplate | null>(null);
   const [rotaDays, setRotaDays] = useState<RotaDay[]>([]);
+  const [rotas, setRotas] = useState<Rota[]>([]);
+  const [selectedRotaId, setSelectedRotaId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [tempError, setTempError] = useState<string | null>(null);
+  const [selectedShift, setSelectedShift] = useState<{ shiftTemplateId: string; dayOfWeek: number } | null>(null);
 
+  // Week state: start date of the current week (Monday)
+  const [weekStartDate, setWeekStartDate] = useState(
+    getStartOfWeek(new Date())
+  );
+
+  // Calculate weekly hours for all staff in the current rota
+  const weeklyHours: Map<string, number> = calculateWeeklyHours(rotaDays);
+
+  // Maximum allowed weekly hours for a staff member
+  const MAX_WEEKLY_HOURS = 40;
+
+  // Fetch data (staff, templates, rotas) on mount and when weekStartDate changes
   useEffect(() => {
+    // No longer generate random shift IDs; only use backend-provided ObjectId IDs
     function ensureShiftIds(template: RotaTemplate): RotaTemplate {
-      return {
-        ...template,
-        days: template.days.map(day => ({
-          ...day,
-          shifts: day.shifts.map(shift => ({
-            ...shift,
-            id: shift.id || Math.random().toString(36).substr(2, 9),
-          })),
-        })),
-      };
+      return template;
     }
 
     async function loadData() {
       try {
         setLoading(true);
-        const [staffData, templateData] = await Promise.all([
+        const [staffData, templateData, rotasData] = await Promise.all([
           fetchStaff(),
           fetchTemplates(),
+          fetchRotas(weekStartDate),
         ]);
         setStaff(staffData);
         setTemplates(templateData.map(ensureShiftIds));
+        setRotas(rotasData);
         setError(null);
+        // Only reset selectedRotaId if the rota is not in the new week
+        if (selectedRotaId) {
+          const stillExists = rotasData.some(r => (r.id || (r as any)._id) === selectedRotaId);
+          if (!stillExists) setSelectedRotaId(null);
+        }
       } catch (err) {
         setError('Failed to load data');
       } finally {
@@ -49,33 +70,104 @@ export function RotaBuilder() {
       }
     }
     loadData();
-  }, []);
+  }, [weekStartDate]);
+
+  // Load a rota by Rota object, fetch its template, rebuild rotaDays, and apply assignments
+  async function loadRotaFromObject(rota: Rota) {
+    // Backend model: rota.days = [{ dayOfWeek, assignments: [{ staffId, shiftTemplateId }] }]
+    // Frontend expects: rotaDays = [{ dayOfWeek, shifts: [{...shift, assignedStaffIds: [] }] }]
+    if (!rota || !rota.templateId) return;
+    setSelectedRotaId(rota.id || (rota as any)._id || null);
+    setSelectedTemplateId(rota.templateId);
+    const template = templates.find(t => t._id === rota.templateId) || null;
+    if (!template) {
+      setError('Failed to find template for rota');
+      return;
+    }
+    // Map: dayOfWeek -> assignments[]
+    const assignmentsByDay = new Map();
+    for (const day of (rota.days || [])) {
+      assignmentsByDay.set(day.dayOfWeek, Array.isArray((day as any).assignments) ? (day as any).assignments : []);
+    }
+    // Build rotaDays from template, fill assignedStaffIds from assignments
+    const rotaDays: RotaDay[] = template.days.map(templateDay => {
+      const assignments = assignmentsByDay.get(templateDay.dayOfWeek) || [];
+      return {
+        dayOfWeek: templateDay.dayOfWeek,
+        shifts: (templateDay.shifts || []).map(shift => {
+          // Find all staff assigned to this shiftTemplateId
+          const assignedStaffIds = assignments
+            .filter((a: any) => String(a.shiftTemplateId) === String(shift.id))
+            .map((a: any) => String(a.staffId));
+          return {
+            ...shift,
+            id: shift.id,
+            shiftTemplateId: shift.id,
+            assignedStaffIds,
+          };
+        })
+      };
+    });
+    setRotaDays(rotaDays);
+  }
 
   useEffect(() => {
     const found = templates.find(t => t._id === selectedTemplateId);
     setSelectedTemplate(found || null);
-    if (found) {
+    // Only reset rotaDays from template if no rota is selected (i.e., user is starting a new rota from template)
+    if (found && !selectedRotaId) {
       // Convert template.days to RotaDay[] with RotaShift[] (ensure assignedStaffIds exists and shiftTemplateId is present)
       const rotaDays = found.days.map(day => ({
         dayOfWeek: day.dayOfWeek,
         shifts: (day.shifts || []).map(shift => ({
           ...shift,
+          id: shift.id, // ensure id is present for rendering
           shiftTemplateId: shift.id, // use shift.id as shiftTemplateId
           assignedStaffIds: [],
         })),
       }));
       setRotaDays(rotaDays);
-    } else {
+    } else if (!found) {
       setRotaDays([]);
     }
-  }, [selectedTemplateId, templates]);
+  }, [selectedTemplateId, templates, selectedRotaId]);
 
   function handleDragEnd(event: DragEndEvent) {
+
     setActiveId(null);
     // Assignment logic
     const staffData = (event.active.data?.current as { staff?: Staff })?.staff;
     const shiftTemplateId = event.over?.id as string | undefined;
     if (!staffData || !shiftTemplateId) return;
+
+    // Get staff's current weekly hours
+    const currentHours = weeklyHours.get(staffData._id) ?? 0;
+
+    // Find the shift being assigned to, to get its duration
+    let shiftDuration = 0;
+    let foundShift = null;
+    for (const day of rotaDays) {
+      const shift = day.shifts.find(s => s.shiftTemplateId === shiftTemplateId);
+      if (shift && shift.startTime && shift.endTime) {
+        foundShift = shift;
+        // Calculate duration in hours
+        const [startH, startM] = shift.startTime.split(':').map(Number);
+        const [endH, endM] = shift.endTime.split(':').map(Number);
+        shiftDuration = (endH + endM / 60) - (startH + startM / 60);
+        if (shiftDuration < 0) shiftDuration += 24; // handle overnight shifts
+        break;
+      }
+    }
+
+    console.log('[handleDragEnd] staff:', staffData?.name, 'currentHours:', currentHours, 'shiftDuration:', shiftDuration, 'MAX_WEEKLY_HOURS:', MAX_WEEKLY_HOURS, 'foundShift:', foundShift);
+
+    // Warn if new total exceeds max
+    if (shiftDuration > 0 && currentHours + shiftDuration > MAX_WEEKLY_HOURS) {
+      alert('Warning: exceeds weekly hour limit');
+      console.warn('[handleDragEnd] Warning alert triggered: currentHours + shiftDuration =', currentHours + shiftDuration);
+    } else {
+      console.log('[handleDragEnd] No warning: currentHours + shiftDuration =', currentHours + shiftDuration);
+    }
 
     setRotaDays(prevDays => {
       // Find the day and shift
@@ -85,41 +177,56 @@ export function RotaBuilder() {
         const shiftIdx = day.shifts.findIndex(shift => shift.shiftTemplateId === shiftTemplateId);
         if (shiftIdx !== -1) {
           const shift = day.shifts[shiftIdx];
-          // Prevent duplicate assignment of staff to any shift on this day
-          const alreadyAssigned = day.shifts.some(s => s.assignedStaffIds.includes(staffData._id));
           const roleMismatch = staffData.role !== shift.roleRequired;
           const slotFull = shift.assignedStaffIds.length >= shift.quantityRequired;
           const alreadyInThisShift = shift.assignedStaffIds.includes(staffData._id);
-          if (!roleMismatch && !slotFull && !alreadyInThisShift && !alreadyAssigned) {
-            // Assign staff immutably (always use _id)
-            const updatedShift = {
-              ...shift,
-              assignedStaffIds: [...shift.assignedStaffIds, staffData._id],
-            };
-            const updatedShifts = [
-              ...day.shifts.slice(0, shiftIdx),
-              updatedShift,
-              ...day.shifts.slice(shiftIdx + 1),
-            ];
-            const updatedDay = { ...day, shifts: updatedShifts };
-            return [
-              ...prevDays.slice(0, dayIdx),
-              updatedDay,
-              ...prevDays.slice(dayIdx + 1),
-            ];
-          } else {
-            if (roleMismatch) {
-              console.warn(`Assignment rejected: Staff role (${staffData.role}) does not match required (${shift.roleRequired})`);
-            } else if (slotFull) {
-              console.warn('Assignment rejected: Shift is already full');
-            } else if (alreadyInThisShift) {
-              console.warn('Assignment rejected: Staff already assigned to this shift');
-            } else if (alreadyAssigned) {
-              console.warn('Assignment rejected: Staff already assigned to another shift on this day');
-            }
-            // If invalid, do nothing
+
+          // Enhanced double-booking prevention
+          // Check if staff is already assigned to another shift on this day with overlapping time
+          const overlappingAssignment = day.shifts.some(s => {
+            if (s === shift) return false; // skip current shift
+            if (!s.assignedStaffIds.includes(staffData._id)) return false;
+            // Compare times for overlap
+            // Both shifts must have startTime and endTime
+            if (!s.startTime || !s.endTime || !shift.startTime || !shift.endTime) return false;
+            return isOverlapping(s.startTime, s.endTime, shift.startTime, shift.endTime);
+          });
+
+          if (roleMismatch) {
+            console.warn(`Assignment rejected: Staff role (${staffData.role}) does not match required (${shift.roleRequired})`);
             return prevDays;
           }
+          if (slotFull) {
+            console.warn('Assignment rejected: Shift is already full');
+            return prevDays;
+          }
+          if (alreadyInThisShift) {
+            console.warn('Assignment rejected: Staff already assigned to this shift');
+            return prevDays;
+          }
+          if (overlappingAssignment) {
+            setTempError('Staff member is already assigned to overlapping shift');
+            setTimeout(() => setTempError(null), 2500);
+            console.warn('Assignment rejected: Staff already assigned to overlapping shift on this day');
+            return prevDays;
+          }
+
+          // Assign staff immutably (always use _id)
+          const updatedShift = {
+            ...shift,
+            assignedStaffIds: [...shift.assignedStaffIds, staffData._id],
+          };
+          const updatedShifts = [
+            ...day.shifts.slice(0, shiftIdx),
+            updatedShift,
+            ...day.shifts.slice(shiftIdx + 1),
+          ];
+          const updatedDay = { ...day, shifts: updatedShifts };
+          return [
+            ...prevDays.slice(0, dayIdx),
+            updatedDay,
+            ...prevDays.slice(dayIdx + 1),
+          ];
         }
       }
       return prevDays;
@@ -129,6 +236,136 @@ export function RotaBuilder() {
   function handleDragStart(event: any) {
     setActiveId(event.active.id);
   }
+
+  // Type for saveRota params
+  type SaveRotaParams = {
+    locationId: string;
+    templateId: string;
+    rotaDays: RotaDay[];
+  };
+
+  // Save rota to backend
+  async function saveRota({ locationId, templateId, rotaDays }: SaveRotaParams): Promise<void> {
+    if (!locationId || !templateId || !rotaDays) {
+      alert('Missing required parameters for saving rota');
+      return;
+    }
+
+    // Helper to check for valid MongoDB ObjectId
+    const isValidObjectId = (id: string) => /^[a-f\d]{24}$/i.test(id);
+
+    if (!isValidObjectId(locationId) || !isValidObjectId(templateId)) {
+      alert('Invalid locationId or templateId. Please check your template data.');
+      return;
+    }
+
+
+    // Backend expects: days: [{ dayOfWeek, assignments: [{ staffId, shiftTemplateId }] }]
+    const template = templates.find(t => t._id === templateId);
+    let foundInvalid = false;
+    const days = (template ? template.days : rotaDays).map(templateDay => {
+      const rotaDay = rotaDays.find(rd => rd.dayOfWeek === templateDay.dayOfWeek);
+      // Collect assignments for this day
+      const assignments: { staffId: string, shiftTemplateId: string }[] = [];
+      if (rotaDay) {
+        for (const shift of rotaDay.shifts) {
+          for (const staffId of shift.assignedStaffIds || []) {
+            // Only allow valid ObjectIds for backend
+            if (
+              isValidObjectId(staffId) &&
+              isValidObjectId(shift.shiftTemplateId)
+            ) {
+              assignments.push({ staffId: String(staffId), shiftTemplateId: String(shift.shiftTemplateId) });
+            } else {
+              foundInvalid = true;
+            }
+          }
+        }
+      }
+      return {
+        dayOfWeek: templateDay.dayOfWeek,
+        assignments,
+      };
+    });
+    if (foundInvalid) {
+      alert('Some staff or shift IDs are not valid ObjectIds. Assignments with invalid IDs will not be saved. Please check your data.');
+    }
+
+    const payload = {
+      locationId: String(locationId),
+      templateId: String(templateId),
+      weekStartDate, // Use selected week
+      status: 'draft' as 'draft',
+      days,
+    };
+
+    console.log('Sending rota payload:', payload);
+
+    try {
+      let response;
+      let rotaId: string;
+      if (selectedRotaId) {
+        response = await updateRotaApi(selectedRotaId, payload as any);
+        rotaId = response.id || (response as any)._id;
+        console.log('Rota updated:', response);
+      } else {
+        response = await createRotaApi(payload as any);
+        rotaId = response.id || (response as any)._id;
+        console.log('Rota created:', response);
+      }
+      // Refresh rota list after saving (for current week)
+      const rotasData = await fetchRotas(weekStartDate);
+      setRotas(rotasData);
+      setSelectedRotaId(rotaId);
+      // Optionally reload the rota into the builder
+      const updatedRota = rotasData.find(r => (r.id || (r as any)._id) === rotaId);
+      if (updatedRota) {
+        await loadRotaFromObject(updatedRota);
+      }
+      alert('Draft rota saved.');
+    } catch (error) {
+      console.error('Failed to save rota:', error);
+      alert('Failed to save rota. See console for details.');
+    }
+  }
+
+  // Publish rota to backend
+  async function publishRota() {
+    if (!selectedRotaId) {
+      alert('No rota selected to publish.');
+      return;
+    }
+    try {
+      // Find the rota to publish
+      const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
+      if (!rota) {
+        alert('Selected rota not found.');
+        return;
+      }
+      // Prepare payload for publishing (set status to 'published' as correct type)
+      const payload = {
+        ...rota,
+        status: 'published' as 'published',
+      };
+      await updateRotaApi(selectedRotaId, payload);
+      // Refresh rota list after publishing
+      const rotasData = await fetchRotas();
+      setRotas(rotasData);
+      // Reload the just-published rota into the builder to avoid blank page
+      const updatedRota = rotasData.find(r => (r.id || (r as any)._id) === selectedRotaId);
+      if (updatedRota) {
+        await loadRotaFromObject(updatedRota);
+      }
+      alert('Rota published successfully.');
+    } catch (error) {
+      console.error('Failed to publish rota:', error);
+      alert('Failed to publish rota. See console for details.');
+    }
+  }
+
+  // Editing is disabled if loading, error, or selected rota is published
+  const selectedRota = selectedRotaId ? rotas.find(r => (r.id || (r as any)._id) === selectedRotaId) : null;
+  const isEditingDisabled = loading || !!error || (selectedRota && selectedRota.status === 'published');
 
   if (loading) {
     return <div>Loading rota builder...</div>;
@@ -140,65 +377,419 @@ export function RotaBuilder() {
     return <div>No staff or templates found.</div>;
   }
 
+  // Determine current rota status
+  const rotaStatus = (() => {
+    if (selectedRotaId) {
+      const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
+      return rota?.status || 'draft';
+    }
+    return 'draft';
+  })();
+
   return (
-    <DndContext onDragEnd={handleDragEnd} onDragStart={handleDragStart}>
-      <div style={{ display: 'flex', gap: 24 }}>
-        {/* Left panel: StaffPool */}
-        <div style={{ minWidth: 200 }}>
-          <h3>Staff Pool</h3>
-          {staff.length === 0 ? (
-            <div>No staff found.</div>
-          ) : (
-            staff.map(s => (
-              <StaffCard key={s._id} staff={s} />
-            ))
-          )}
-          <DragOverlay>
-            {activeId ? (
-              (() => {
-                const draggedStaff = staff.find(s => (s.id || s._id) === activeId);
-                return draggedStaff ? <StaffCard staff={draggedStaff} /> : null;
-              })()
-            ) : null}
-          </DragOverlay>
-        </div>
-
-        {/* Right panel: RotaGrid */}
-        <div style={{ flex: 1 }}>
-          <h3>Rota Builder</h3>
-          <label>
-            Template:
-            <select
-              value={selectedTemplateId}
-              onChange={e => setSelectedTemplateId(e.target.value)}
-            >
-              <option value="">Select template</option>
-              {templates.map(t => (
-                <option key={t._id} value={t._id}>{t.name}</option>
-              ))}
-            </select>
-          </label>
-
-          {rotaDays.length > 0 ? (
-            <div style={{ display: 'flex', gap: 8 }}>
-              {rotaDays.map(day => (
-                <div key={day.dayOfWeek} style={{ border: '1px solid #ccc', padding: 8 }}>
-                  <h4>Day {day.dayOfWeek}</h4>
-                  {Array.isArray(day.shifts) && day.shifts.length > 0 ? (
-                    day.shifts.map(shift => (
-                      <ShiftSlot key={shift.id} shift={shift} staff={staff} />
-                    ))
-                  ) : (
-                    <div>No shifts.</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div>Select a template to view rota grid.</div>
-          )}
-        </div>
+    <>
+      {tempError && (
+        <div style={{ color: 'red', marginBottom: 12, fontWeight: 'bold' }}>{tempError}</div>
+      )}
+      {/* Week Navigation Controls (no styling) */}
+      <div>
+        <button onClick={() => setWeekStartDate(getPreviousWeek(weekStartDate))}>Previous Week</button>
+        <span> Week of {weekStartDate} </span>
+        <button onClick={() => setWeekStartDate(getNextWeek(weekStartDate))}>Next Week</button>
       </div>
-    </DndContext>
+      {rotaStatus === 'draft' && !isEditingDisabled ? (
+        <DndContext onDragEnd={handleDragEnd} onDragStart={handleDragStart}>
+          <div style={{ display: 'flex', gap: 24 }}>
+            {/* Left panel: StaffPool */}
+            <div style={{ minWidth: 200 }}>
+              <h3>Staff Pool</h3>
+              {staff.length === 0 ? (
+                <div>No staff found.</div>
+              ) : (
+                staff.map(s => (
+                  <StaffCard key={s._id} staff={s} draggable={rotaStatus === 'draft'} />
+                ))
+              )}
+              <DragOverlay>
+                {activeId ? (
+                  (() => {
+                    const draggedStaff = staff.find(s => (s.id || s._id) === activeId);
+                    return draggedStaff ? <StaffCard staff={draggedStaff} /> : null;
+                  })()
+                ) : null}
+              </DragOverlay>
+            </div>
+
+            {/* Right panel: RotaGrid */}
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontWeight: 'bold', marginBottom: 8 }}>
+                Status: <span style={{ color: String(rotaStatus) === 'published' ? 'green' : 'orange' }}>
+                  {String(rotaStatus) === 'published' ? 'Published' : 'Draft'}
+                </span>
+              </h3>
+              <h3>Rota Builder</h3>
+
+              {/* Separate dropdowns for published rotas, draft rotas, and rota templates */}
+              <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+                <label>
+                  Published Rotas:
+                  <select
+                    value={selectedRotaId && rotas.find(r => (r.id || (r as any)._id) === selectedRotaId && r.status === 'published') ? selectedRotaId : ''}
+                    onChange={async e => {
+                      const rotaId = e.target.value;
+                      setSelectedRotaId(rotaId || null);
+                      const rota = rotas.find(r => (r.id || (r as any)._id) === rotaId && r.status === 'published');
+                      if (rota) await loadRotaFromObject(rota);
+                    }}
+                  >
+                    <option value="">Select published rota</option>
+                    {rotas
+                      .filter(r => r.status === 'published' && r.weekStartDate === weekStartDate)
+                      .map(r => {
+                        const rotaId = r.id || (r as any)._id;
+                        const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
+                          ? r.name
+                          : (typeof r === 'object' && 'label' in r && r.label)
+                          ? (r as any).label
+                          : rotaId;
+                        return (
+                          <option key={rotaId} value={rotaId}>
+                            {rotaLabel}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </label>
+                {/* Draft rotas dropdown for current week */}
+                <label style={{ marginLeft: 16 }}>
+                  Draft Rotas:
+                  <select
+                    value={selectedRotaId && rotas.find(r => (r.id || (r as any)._id) === selectedRotaId && r.status === 'draft') ? selectedRotaId : ''}
+                    onChange={async e => {
+                      const rotaId = e.target.value;
+                      setSelectedRotaId(rotaId || null);
+                      const rota = rotas.find(r => (r.id || (r as any)._id) === rotaId && r.status === 'draft');
+                      if (rota) await loadRotaFromObject(rota);
+                    }}
+                  >
+                    <option value="">Select draft rota</option>
+                    {rotas
+                      .filter(r => r.status === 'draft' && r.weekStartDate === weekStartDate)
+                      .map(r => {
+                        const rotaId = r.id || (r as any)._id;
+                        const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
+                          ? r.name
+                          : (typeof r === 'object' && 'label' in r && r.label)
+                          ? (r as any).label
+                          : rotaId;
+                        return (
+                          <option key={rotaId} value={rotaId}>
+                            {rotaLabel}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </label>
+                {/* Draft rotas dropdown removed as requested */}
+                <label>
+                  Rota Templates:
+                  <select
+                    value={selectedTemplateId || ''}
+                    onChange={e => {
+                      const templateId = e.target.value;
+                      setSelectedTemplateId(templateId);
+                      setSelectedRotaId(null); // Clear rota selection when picking a template
+                    }}
+                  >
+                    <option value="">Select template</option>
+                    {templates.map(t => (
+                      <option key={t._id} value={t._id}>
+                        {t.name || t._id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <button
+                onClick={() => {
+                  if (!selectedTemplateId || !selectedTemplate) {
+                    alert('Please select a template.');
+                    return;
+                  }
+                  if (!selectedTemplate.locationId || selectedTemplate.locationId.length !== 24) {
+                    alert('Template is missing a valid locationId.');
+                    return;
+                  }
+                  saveRota({ locationId: selectedTemplate.locationId, templateId: selectedTemplateId, rotaDays });
+                }}
+                disabled={!!isEditingDisabled}
+              >
+                Save Draft
+              </button>
+
+              {/* Simple Publish button as requested */}
+              {/* Publish button: allow user to select week to publish for */}
+              {/* Only show Publish button if selected rota is not published */}
+              {(() => {
+                if (!selectedRotaId) return null;
+                const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
+                if (rota?.status === 'published') return null;
+                return (
+                  <button
+                    onClick={async () => {
+                      if (!selectedRotaId) {
+                        alert('No rota selected to publish.');
+                        return;
+                      }
+                      try {
+                        const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
+                        if (!rota) {
+                          alert('Selected rota not found.');
+                          return;
+                        }
+                        const payload = {
+                          ...rota,
+                          status: 'published' as 'published',
+                          weekStartDate,
+                        };
+                        await updateRotaApi(selectedRotaId, payload);
+                        const rotasData = await fetchRotas(weekStartDate);
+                        setRotas(rotasData);
+                        const updatedRota = rotasData.find(r => (r.id || (r as any)._id) === selectedRotaId);
+                        if (updatedRota) {
+                          await loadRotaFromObject(updatedRota);
+                        }
+                        alert('Rota published successfully.');
+                      } catch (error) {
+                        console.error('Failed to publish rota:', error);
+                        alert('Failed to publish rota. See console for details.');
+                      }
+                    }}
+                  >
+                    Publish
+                  </button>
+                );
+              })()}
+
+              {/* Always show rota grid */}
+              {rotaDays.length > 0 ? (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {rotaDays.map(day => (
+                    <div key={day.dayOfWeek} style={{ border: '1px solid #ccc', padding: 8 }}>
+                      <h4>Day {day.dayOfWeek}</h4>
+                      {Array.isArray(day.shifts) && day.shifts.length > 0 ? (
+                        day.shifts.map(shift => (
+                          <div
+                            key={shift.id}
+                            onClick={() => setSelectedShift({ shiftTemplateId: shift.shiftTemplateId || shift.id, dayOfWeek: day.dayOfWeek })}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <ShiftSlot
+                              shift={shift}
+                              staff={staff}
+                              dayOfWeek={day.dayOfWeek}
+                            />
+                          </div>
+                        ))
+                      ) : (
+                        <div>No shifts.</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div>Select a template to view rota grid.</div>
+              )}
+            </div>
+          </div>
+        </DndContext>
+      ) : (
+        <div style={{ display: 'flex', gap: 24 }}>
+          {/* Left panel: StaffPool */}
+          <div style={{ minWidth: 200 }}>
+            <h3>Staff Pool</h3>
+            {staff.length === 0 ? (
+              <div>No staff found.</div>
+            ) : (
+              staff.map(s => (
+                <StaffCard key={s._id} staff={s} draggable={false} />
+              ))
+            )}
+          </div>
+
+          {/* Right panel: RotaGrid */}
+          <div style={{ flex: 1 }}>
+            <h3 style={{ fontWeight: 'bold', marginBottom: 8 }}>
+              Status: <span style={{ color: String(rotaStatus) === 'published' ? 'green' : 'orange' }}>
+                {String(rotaStatus) === 'published' ? 'Published' : 'Draft'}
+              </span>
+            </h3>
+            <h3>Rota Builder</h3>
+
+            {/* Separate dropdowns for published rotas, draft rotas, and rota templates */}
+            <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+              <label>
+                Published Rotas:
+                <select
+                  value={selectedRotaId && rotas.find(r => (r.id || (r as any)._id) === selectedRotaId && r.status === 'published') ? selectedRotaId : ''}
+                  onChange={async e => {
+                    const rotaId = e.target.value;
+                    setSelectedRotaId(rotaId || null);
+                    const rota = rotas.find(r => (r.id || (r as any)._id) === rotaId && r.status === 'published');
+                    if (rota) await loadRotaFromObject(rota);
+                  }}
+                >
+                  <option value="">Select published rota</option>
+                  {rotas.filter(r => r.status === 'published').map(r => {
+                    const rotaId = r.id || (r as any)._id;
+                    const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
+                      ? r.name
+                      : (typeof r === 'object' && 'label' in r && r.label)
+                      ? (r as any).label
+                      : rotaId;
+                    return (
+                      <option key={rotaId} value={rotaId}>
+                        {rotaLabel}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              {/* Draft rotas dropdown removed as requested */}
+              <label>
+                Rota Templates:
+                <select
+                  value={selectedTemplateId || ''}
+                  onChange={e => {
+                    const templateId = e.target.value;
+                    setSelectedTemplateId(templateId);
+                    setSelectedRotaId(null); // Clear rota selection when picking a template
+                  }}
+                >
+                  <option value="">Select template</option>
+                  {templates.map(t => (
+                    <option key={t._id} value={t._id}>
+                      {t.name || t._id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <button
+              onClick={() => {
+                if (!selectedTemplateId || !selectedTemplate) {
+                  alert('Please select a template.');
+                  return;
+                }
+                if (!selectedTemplate.locationId || selectedTemplate.locationId.length !== 24) {
+                  alert('Template is missing a valid locationId.');
+                  return;
+                }
+                saveRota({ locationId: selectedTemplate.locationId, templateId: selectedTemplateId, rotaDays });
+              }}
+              disabled={String(rotaStatus) === 'published'}
+            >
+              Save Draft
+            </button>
+
+            {/* Simple Publish button as requested */}
+            <button onClick={publishRota}>Publish</button>
+
+            {/* Always show rota grid */}
+            {rotaDays.length > 0 ? (
+              <div style={{ display: 'flex', gap: 8 }}>
+                {rotaDays.map(day => (
+                  <div key={day.dayOfWeek} style={{ border: '1px solid #ccc', padding: 8 }}>
+                    <h4>Day {day.dayOfWeek}</h4>
+                    {Array.isArray(day.shifts) && day.shifts.length > 0 ? (
+                      day.shifts.map(shift => (
+                        <div
+                          key={shift.id}
+                          onClick={() => setSelectedShift({ shiftTemplateId: shift.shiftTemplateId || shift.id, dayOfWeek: day.dayOfWeek })}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <ShiftSlot
+                            shift={shift}
+                            staff={staff}
+                          />
+                        </div>
+                      ))
+                    ) : (
+                      <div>No shifts.</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div>Select a template to view rota grid.</div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Suggestion Panel */}
+      {selectedShift && (() => {
+        const { shiftTemplateId, dayOfWeek } = selectedShift;
+        const day = rotaDays.find(d => d.dayOfWeek === dayOfWeek);
+        if (!day) return <div>No suggestions.</div>;
+        const shift = day.shifts.find(s => (s.shiftTemplateId || s.id) === shiftTemplateId);
+        if (!shift) return <div>No suggestions.</div>;
+        const suggestions = getSuggestedStaff(shift, dayOfWeek, rotaDays, staff);
+        const hoursMap = calculateWeeklyHours(rotaDays);
+        if (!suggestions.length) return <div>No suggestions.</div>;
+        return (
+          <div>
+            <div>Suggested Staff:</div>
+            {suggestions.map(s => {
+              const hours = hoursMap.get(s._id) ?? 0;
+              let warning = '';
+              if (hours >= MAX_WEEKLY_HOURS) {
+                warning = ' (Over limit)';
+              } else if (hours >= 0.9 * MAX_WEEKLY_HOURS) {
+                warning = ' (Near limit)';
+              }
+              return (
+                <div key={s._id}>
+                  <span>{s.name} (Hours: {hours}{warning && <span style={{color: hours >= MAX_WEEKLY_HOURS ? 'red' : 'orange', fontWeight: 'bold'}}>{warning}</span>})</span>
+                  <button
+                    onClick={() => {
+                      // Find the shift in the current day
+                      const day = rotaDays.find(d => d.dayOfWeek === dayOfWeek);
+                      const shift = day?.shifts.find(shiftObj => (shiftObj.shiftTemplateId || shiftObj.id) === shiftTemplateId);
+                      let shiftDuration = 0;
+                      if (shift && shift.startTime && shift.endTime) {
+                        const [startH, startM] = shift.startTime.split(':').map(Number);
+                        const [endH, endM] = shift.endTime.split(':').map(Number);
+                        shiftDuration = (endH + endM / 60) - (startH + startM / 60);
+                        if (shiftDuration < 0) shiftDuration += 24;
+                      }
+                      const currentHours = hoursMap.get(s._id) ?? 0;
+                      if (shiftDuration > 0 && currentHours + shiftDuration > MAX_WEEKLY_HOURS) {
+                        alert('Warning: exceeds weekly hour limit');
+                      }
+                      setRotaDays(prevDays => prevDays.map(day => {
+                        if (day.dayOfWeek !== dayOfWeek) return day;
+                        return {
+                          ...day,
+                          shifts: day.shifts.map(shiftObj => {
+                            if ((shiftObj.shiftTemplateId || shiftObj.id) !== shiftTemplateId) return shiftObj;
+                            if ((shiftObj.assignedStaffIds || []).includes(s._id)) return shiftObj;
+                            return {
+                              ...shiftObj,
+                              assignedStaffIds: [...(shiftObj.assignedStaffIds || []), s._id],
+                            };
+                          })
+                        };
+                      }));
+                    }}
+                  >Assign</button>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+    </>
   );
 }
