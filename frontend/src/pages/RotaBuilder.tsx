@@ -7,12 +7,13 @@ import { RotaTemplate } from '../types/template';
 import { RotaDay, Rota } from '../types/rota';
 import { StaffCard } from '../components/rota/StaffCard';
 import ShiftSlot from '../components/rota/ShiftSlot';
-import { createRota as createRotaApi, updateRota as updateRotaApi, fetchRotas } from '../services/rota.service';
+import { createRota as createRotaApi, updateRota as updateRotaApi, fetchRotas, copyPreviousWeekRota, deleteRota as deleteRotaApi } from '../services/rota.service';
 import { isOverlapping } from '../utils/isOverlapping';
 import { getSuggestedStaff } from '../utils/getSuggestedStaff';
 
 import { calculateWeeklyHours } from '../utils/calculateWeeklyHours';
 import { getStartOfWeek, getNextWeek, getPreviousWeek } from '../utils/weekUtils';
+import { formatWeekDateLong } from '../utils/rotaUtils';
 
 export function RotaBuilder() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -60,7 +61,7 @@ export function RotaBuilder() {
         setError(null);
         // Only reset selectedRotaId if the rota is not in the new week
         if (selectedRotaId) {
-          const stillExists = rotasData.some(r => (r.id || (r as any)._id) === selectedRotaId);
+          const stillExists = rotasData.some(r => String(r.id || (r as any)._id) === String(selectedRotaId));
           if (!stillExists) setSelectedRotaId(null);
         }
       } catch (err) {
@@ -79,9 +80,13 @@ export function RotaBuilder() {
     if (!rota || !rota.templateId) return;
     setSelectedRotaId(rota.id || (rota as any)._id || null);
     setSelectedTemplateId(rota.templateId);
-    const template = templates.find(t => t._id === rota.templateId) || null;
+    // Convert both to strings for comparison to handle ObjectId vs string mismatch
+    const template = templates.find(t => String(t._id) === String(rota.templateId)) || null;
     if (!template) {
-      setError('Failed to find template for rota');
+      setTempError(`⚠️ Template not found for this rota. The template (${rota.templateId}) may have been deleted. Please use the Delete button to remove this rota.`);
+      console.error('Template not found. Looking for:', rota.templateId, 'Available templates:', templates.map(t => t._id));
+      // Don't return - allow the UI to render so user can delete the broken rota
+      setRotaDays([]); // Clear any existing rota days
       return;
     }
     // Map: dayOfWeek -> assignments[]
@@ -363,8 +368,94 @@ export function RotaBuilder() {
     }
   }
 
+  // Copy previous week's rota
+  async function handleCopyPreviousWeek() {
+    try {
+      // Validate template is selected
+      if (!selectedTemplate || !selectedTemplateId) {
+        alert('Please select a template first.');
+        return;
+      }
+
+      const locationId = selectedTemplate.locationId;
+      if (!locationId || locationId.length !== 24) {
+        alert('Selected template is missing a valid locationId.');
+        return;
+      }
+
+      // Check if rota already exists for current week
+      const existingRota = rotas.find(r => r.weekStartDate === weekStartDate);
+      if (existingRota) {
+        alert(`A rota already exists for this week (${weekStartDate}). Please delete or select it instead.`);
+        return;
+      }
+
+      // Confirm action with user
+      if (!window.confirm(`Copy previous week's rota to ${weekStartDate}?`)) {
+        return;
+      }
+
+      // Call API to copy previous week
+      const response = await copyPreviousWeekRota(locationId, weekStartDate);
+
+      // Refresh rotas list for current week
+      const rotasData = await fetchRotas(weekStartDate);
+      setRotas(rotasData);
+
+      // Load the newly created rota
+      if (response.rota) {
+        await loadRotaFromObject(response.rota);
+      }
+
+      alert(`Successfully copied rota from ${response.copiedFrom.weekStartDate}!`);
+    } catch (error: any) {
+      console.error('Failed to copy previous week:', error);
+
+      // Handle specific error cases
+      if (error.response?.status === 404) {
+        alert('No rota found for the previous week. Please create one manually.');
+      } else if (error.response?.status === 409) {
+        alert('A rota already exists for this week.');
+      } else {
+        alert(`Failed to copy previous week's rota: ${error.response?.data?.message || error.message}`);
+      }
+    }
+  }
+
+  // Delete a rota (draft or published)
+  async function handleDeleteRota(rotaId: string, status: 'draft' | 'published') {
+    try {
+      // Confirm deletion
+      const confirmMessage = status === 'published'
+        ? 'Are you sure you want to delete this PUBLISHED rota? This action cannot be undone and will affect staff schedules!'
+        : 'Are you sure you want to delete this draft rota?';
+
+      if (!window.confirm(confirmMessage)) {
+        return;
+      }
+
+      // Delete the rota
+      await deleteRotaApi(rotaId);
+
+      // Refresh rotas list
+      const rotasData = await fetchRotas(weekStartDate);
+      setRotas(rotasData);
+
+      // Clear selection if deleted rota was selected
+      if (selectedRotaId === rotaId) {
+        setSelectedRotaId(null);
+        setRotaDays([]);
+      }
+
+      alert(`${status === 'published' ? 'Published' : 'Draft'} rota deleted successfully.`);
+    } catch (error: any) {
+      console.error('Failed to delete rota:', error);
+      alert(`Failed to delete rota: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
   // Editing is disabled if loading, error, or selected rota is published
-  const selectedRota = selectedRotaId ? rotas.find(r => (r.id || (r as any)._id) === selectedRotaId) : null;
+  const selectedRota = selectedRotaId ? rotas.find(r => String(r.id || (r as any)._id) === String(selectedRotaId)) : null;
   const isEditingDisabled = loading || !!error || (selectedRota && selectedRota.status === 'published');
 
   if (loading) {
@@ -380,7 +471,7 @@ export function RotaBuilder() {
   // Determine current rota status
   const rotaStatus = (() => {
     if (selectedRotaId) {
-      const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
+      const rota = rotas.find(r => String(r.id || (r as any)._id) === String(selectedRotaId));
       return rota?.status || 'draft';
     }
     return 'draft';
@@ -394,7 +485,7 @@ export function RotaBuilder() {
       {/* Week Navigation Controls (no styling) */}
       <div>
         <button onClick={() => setWeekStartDate(getPreviousWeek(weekStartDate))}>Previous Week</button>
-        <span> Week of {weekStartDate} </span>
+        <span> Week of {formatWeekDateLong(weekStartDate)} </span>
         <button onClick={() => setWeekStartDate(getNextWeek(weekStartDate))}>Next Week</button>
       </div>
       {rotaStatus === 'draft' && !isEditingDisabled ? (
@@ -430,65 +521,87 @@ export function RotaBuilder() {
               <h3>Rota Builder</h3>
 
               {/* Separate dropdowns for published rotas, draft rotas, and rota templates */}
-              <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 12, alignItems: 'flex-end' }}>
                 <label>
                   Published Rotas:
-                  <select
-                    value={selectedRotaId && rotas.find(r => (r.id || (r as any)._id) === selectedRotaId && r.status === 'published') ? selectedRotaId : ''}
-                    onChange={async e => {
-                      const rotaId = e.target.value;
-                      setSelectedRotaId(rotaId || null);
-                      const rota = rotas.find(r => (r.id || (r as any)._id) === rotaId && r.status === 'published');
-                      if (rota) await loadRotaFromObject(rota);
-                    }}
-                  >
-                    <option value="">Select published rota</option>
-                    {rotas
-                      .filter(r => r.status === 'published' && r.weekStartDate === weekStartDate)
-                      .map(r => {
-                        const rotaId = r.id || (r as any)._id;
-                        const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
-                          ? r.name
-                          : (typeof r === 'object' && 'label' in r && r.label)
-                          ? (r as any).label
-                          : rotaId;
-                        return (
-                          <option key={rotaId} value={rotaId}>
-                            {rotaLabel}
-                          </option>
-                        );
-                      })}
-                  </select>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <select
+                      value={selectedRotaId && rotas.find(r => String(r.id || (r as any)._id) === String(selectedRotaId) && r.status === 'published') ? selectedRotaId : ''}
+                      onChange={async e => {
+                        const rotaId = e.target.value;
+                        setSelectedRotaId(rotaId || null);
+                        const rota = rotas.find(r => String(r.id || (r as any)._id) === String(rotaId) && r.status === 'published');
+                        if (rota) await loadRotaFromObject(rota);
+                      }}
+                    >
+                      <option value="">Select published rota</option>
+                      {rotas
+                        .filter(r => r.status === 'published' && r.weekStartDate === weekStartDate)
+                        .map(r => {
+                          const rotaId = r.id || (r as any)._id;
+                          const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
+                            ? r.name
+                            : (typeof r === 'object' && 'label' in r && r.label)
+                            ? (r as any).label
+                            : rotaId;
+                          return (
+                            <option key={rotaId} value={rotaId}>
+                              {rotaLabel}
+                            </option>
+                          );
+                        })}
+                    </select>
+                    {selectedRota && selectedRota.status === 'published' && (
+                      <button
+                        onClick={() => handleDeleteRota(selectedRotaId!, 'published')}
+                        style={{ backgroundColor: '#d32f2f', color: 'white', padding: '4px 12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                        title="Delete this published rota"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </label>
                 {/* Draft rotas dropdown for current week */}
-                <label style={{ marginLeft: 16 }}>
+                <label>
                   Draft Rotas:
-                  <select
-                    value={selectedRotaId && rotas.find(r => (r.id || (r as any)._id) === selectedRotaId && r.status === 'draft') ? selectedRotaId : ''}
-                    onChange={async e => {
-                      const rotaId = e.target.value;
-                      setSelectedRotaId(rotaId || null);
-                      const rota = rotas.find(r => (r.id || (r as any)._id) === rotaId && r.status === 'draft');
-                      if (rota) await loadRotaFromObject(rota);
-                    }}
-                  >
-                    <option value="">Select draft rota</option>
-                    {rotas
-                      .filter(r => r.status === 'draft' && r.weekStartDate === weekStartDate)
-                      .map(r => {
-                        const rotaId = r.id || (r as any)._id;
-                        const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
-                          ? r.name
-                          : (typeof r === 'object' && 'label' in r && r.label)
-                          ? (r as any).label
-                          : rotaId;
-                        return (
-                          <option key={rotaId} value={rotaId}>
-                            {rotaLabel}
-                          </option>
-                        );
-                      })}
-                  </select>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <select
+                      value={selectedRotaId && rotas.find(r => String(r.id || (r as any)._id) === String(selectedRotaId) && r.status === 'draft') ? selectedRotaId : ''}
+                      onChange={async e => {
+                        const rotaId = e.target.value;
+                        setSelectedRotaId(rotaId || null);
+                        const rota = rotas.find(r => String(r.id || (r as any)._id) === String(rotaId) && r.status === 'draft');
+                        if (rota) await loadRotaFromObject(rota);
+                      }}
+                    >
+                      <option value="">Select draft rota</option>
+                      {rotas
+                        .filter(r => r.status === 'draft' && r.weekStartDate === weekStartDate)
+                        .map(r => {
+                          const rotaId = r.id || (r as any)._id;
+                          const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
+                            ? r.name
+                            : (typeof r === 'object' && 'label' in r && r.label)
+                            ? (r as any).label
+                            : rotaId;
+                          return (
+                            <option key={rotaId} value={rotaId}>
+                              {rotaLabel}
+                            </option>
+                          );
+                        })}
+                    </select>
+                    {selectedRota && selectedRota.status === 'draft' && (
+                      <button
+                        onClick={() => handleDeleteRota(selectedRotaId!, 'draft')}
+                        style={{ backgroundColor: '#f57c00', color: 'white', padding: '4px 12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                        title="Delete this draft rota"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </label>
                 {/* Draft rotas dropdown removed as requested */}
                 <label>
@@ -528,49 +641,54 @@ export function RotaBuilder() {
                 Save Draft
               </button>
 
-              {/* Simple Publish button as requested */}
-              {/* Publish button: allow user to select week to publish for */}
-              {/* Only show Publish button if selected rota is not published */}
-              {(() => {
-                if (!selectedRotaId) return null;
-                const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
-                if (rota?.status === 'published') return null;
-                return (
-                  <button
-                    onClick={async () => {
-                      if (!selectedRotaId) {
-                        alert('No rota selected to publish.');
-                        return;
-                      }
-                      try {
-                        const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
-                        if (!rota) {
-                          alert('Selected rota not found.');
-                          return;
-                        }
-                        const payload = {
-                          ...rota,
-                          status: 'published' as 'published',
-                          weekStartDate,
-                        };
-                        await updateRotaApi(selectedRotaId, payload);
-                        const rotasData = await fetchRotas(weekStartDate);
-                        setRotas(rotasData);
-                        const updatedRota = rotasData.find(r => (r.id || (r as any)._id) === selectedRotaId);
-                        if (updatedRota) {
-                          await loadRotaFromObject(updatedRota);
-                        }
-                        alert('Rota published successfully.');
-                      } catch (error) {
-                        console.error('Failed to publish rota:', error);
-                        alert('Failed to publish rota. See console for details.');
-                      }
-                    }}
-                  >
-                    Publish
-                  </button>
-                );
-              })()}
+              {/* Copy Previous Week button - show unless published rota exists for current week */}
+              {!rotas.some(r => r.weekStartDate === weekStartDate && r.status === 'published') && (
+                <button
+                  onClick={handleCopyPreviousWeek}
+                  style={{ marginLeft: '8px', backgroundColor: '#4CAF50' }}
+                  disabled={!selectedTemplate}
+                  title={!selectedTemplate ? 'Select a template first' : 'Copy assignments from previous week'}
+                >
+                  Copy Previous Week
+                </button>
+              )}
+
+              {/* Publish button - disabled when rota is already published */}
+              <button
+                onClick={async () => {
+                  if (!selectedRotaId) {
+                    alert('No rota selected to publish.');
+                    return;
+                  }
+                  try {
+                    const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
+                    if (!rota) {
+                      alert('Selected rota not found.');
+                      return;
+                    }
+                    const payload = {
+                      ...rota,
+                      status: 'published' as 'published',
+                      weekStartDate,
+                    };
+                    await updateRotaApi(selectedRotaId, payload);
+                    const rotasData = await fetchRotas(weekStartDate);
+                    setRotas(rotasData);
+                    const updatedRota = rotasData.find(r => (r.id || (r as any)._id) === selectedRotaId);
+                    if (updatedRota) {
+                      await loadRotaFromObject(updatedRota);
+                    }
+                    alert('Rota published successfully.');
+                  } catch (error) {
+                    console.error('Failed to publish rota:', error);
+                    alert('Failed to publish rota. See console for details.');
+                  }
+                }}
+                disabled={String(rotaStatus) === 'published'}
+                title={String(rotaStatus) === 'published' ? 'This rota is already published' : 'Publish this rota'}
+              >
+                Publish
+              </button>
 
               {/* Always show rota grid */}
               {rotaDays.length > 0 ? (
@@ -628,35 +746,84 @@ export function RotaBuilder() {
             <h3>Rota Builder</h3>
 
             {/* Separate dropdowns for published rotas, draft rotas, and rota templates */}
-            <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 16, marginBottom: 12, alignItems: 'flex-end' }}>
               <label>
                 Published Rotas:
-                <select
-                  value={selectedRotaId && rotas.find(r => (r.id || (r as any)._id) === selectedRotaId && r.status === 'published') ? selectedRotaId : ''}
-                  onChange={async e => {
-                    const rotaId = e.target.value;
-                    setSelectedRotaId(rotaId || null);
-                    const rota = rotas.find(r => (r.id || (r as any)._id) === rotaId && r.status === 'published');
-                    if (rota) await loadRotaFromObject(rota);
-                  }}
-                >
-                  <option value="">Select published rota</option>
-                  {rotas.filter(r => r.status === 'published').map(r => {
-                    const rotaId = r.id || (r as any)._id;
-                    const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
-                      ? r.name
-                      : (typeof r === 'object' && 'label' in r && r.label)
-                      ? (r as any).label
-                      : rotaId;
-                    return (
-                      <option key={rotaId} value={rotaId}>
-                        {rotaLabel}
-                      </option>
-                    );
-                  })}
-                </select>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select
+                    value={selectedRotaId && rotas.find(r => String(r.id || (r as any)._id) === String(selectedRotaId) && r.status === 'published') ? selectedRotaId : ''}
+                    onChange={async e => {
+                      const rotaId = e.target.value;
+                      setSelectedRotaId(rotaId || null);
+                      const rota = rotas.find(r => String(r.id || (r as any)._id) === String(rotaId) && r.status === 'published');
+                      if (rota) await loadRotaFromObject(rota);
+                    }}
+                  >
+                    <option value="">Select published rota</option>
+                    {rotas.filter(r => r.status === 'published').map(r => {
+                      const rotaId = r.id || (r as any)._id;
+                      const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
+                        ? r.name
+                        : (typeof r === 'object' && 'label' in r && r.label)
+                        ? (r as any).label
+                        : rotaId;
+                      return (
+                        <option key={rotaId} value={rotaId}>
+                          {rotaLabel}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {selectedRota && selectedRota.status === 'published' && (
+                    <button
+                      onClick={() => handleDeleteRota(selectedRotaId!, 'published')}
+                      style={{ backgroundColor: '#d32f2f', color: 'white', padding: '4px 12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      title="Delete this published rota"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </label>
-              {/* Draft rotas dropdown removed as requested */}
+              {/* Draft rotas dropdown */}
+              <label>
+                Draft Rotas:
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select
+                    value={selectedRotaId && rotas.find(r => String(r.id || (r as any)._id) === String(selectedRotaId) && r.status === 'draft') ? selectedRotaId : ''}
+                    onChange={async e => {
+                      const rotaId = e.target.value;
+                      setSelectedRotaId(rotaId || null);
+                      const rota = rotas.find(r => String(r.id || (r as any)._id) === String(rotaId) && r.status === 'draft');
+                      if (rota) await loadRotaFromObject(rota);
+                    }}
+                  >
+                    <option value="">Select draft rota</option>
+                    {rotas.filter(r => r.status === 'draft').map(r => {
+                      const rotaId = r.id || (r as any)._id;
+                      const rotaLabel = (typeof r === 'object' && 'name' in r && r.name)
+                        ? r.name
+                        : (typeof r === 'object' && 'label' in r && r.label)
+                        ? (r as any).label
+                        : rotaId;
+                      return (
+                        <option key={rotaId} value={rotaId}>
+                          {rotaLabel}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {selectedRota && selectedRota.status === 'draft' && (
+                    <button
+                      onClick={() => handleDeleteRota(selectedRotaId!, 'draft')}
+                      style={{ backgroundColor: '#f57c00', color: 'white', padding: '4px 12px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      title="Delete this draft rota"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </label>
               <label>
                 Rota Templates:
                 <select
@@ -694,8 +861,26 @@ export function RotaBuilder() {
               Save Draft
             </button>
 
-            {/* Simple Publish button as requested */}
-            <button onClick={publishRota}>Publish</button>
+            {/* Publish button - disabled when rota is already published */}
+            <button
+              onClick={publishRota}
+              disabled={String(rotaStatus) === 'published'}
+              title={String(rotaStatus) === 'published' ? 'This rota is already published' : 'Publish this rota'}
+            >
+              Publish
+            </button>
+
+            {/* Copy Previous Week button - show unless published rota exists for current week */}
+            {!rotas.some(r => r.weekStartDate === weekStartDate && r.status === 'published') && (
+              <button
+                onClick={handleCopyPreviousWeek}
+                style={{ marginLeft: '8px', backgroundColor: '#4CAF50' }}
+                disabled={!selectedTemplate}
+                title={!selectedTemplate ? 'Select a template first' : 'Copy assignments from previous week'}
+              >
+                Copy Previous Week
+              </button>
+            )}
 
             {/* Always show rota grid */}
             {rotaDays.length > 0 ? (
