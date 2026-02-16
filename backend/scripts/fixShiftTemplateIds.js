@@ -7,7 +7,7 @@ const { ObjectId } = mongoose.Types;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/shiftdrop';
 
 async function main() {
-  await mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+  await mongoose.connect(MONGO_URI);
   const RotaTemplate = mongoose.connection.collection('rotatemplates');
 
   const templates = await RotaTemplate.find({}).toArray();
