@@ -8,10 +8,8 @@ import { RotaDay, Rota } from '../types/rota';
 import { StaffCard } from '../components/rota/StaffCard';
 import ShiftSlot from '../components/rota/ShiftSlot';
 import { createRota as createRotaApi, updateRota as updateRotaApi, fetchRotas, copyPreviousWeekRota, deleteRota as deleteRotaApi } from '../services/rota.service';
-import { isOverlapping } from '../utils/isOverlapping';
-import { getSuggestedStaff } from '../utils/getSuggestedStaff';
-
-import { calculateWeeklyHours } from '../utils/calculateWeeklyHours';
+import { applyAssignment, calculateWeeklyHours, getSuggestedStaff, MAX_WEEKLY_HOURS } from '../domain/scheduling';
+import type { AssignmentResult } from '../domain/scheduling';
 import { getStartOfWeek, getNextWeek, getPreviousWeek } from '../utils/weekUtils';
 import { formatWeekDateLong } from '../utils/rotaUtils';
 
@@ -37,8 +35,7 @@ export function RotaBuilder() {
   // Calculate weekly hours for all staff in the current rota
   const weeklyHours: Map<string, number> = calculateWeeklyHours(rotaDays);
 
-  // Maximum allowed weekly hours for a staff member
-  const MAX_WEEKLY_HOURS = 40;
+  // MAX_WEEKLY_HOURS is imported from domain/scheduling
 
   // Fetch data (staff, templates, rotas) on mount and when weekStartDate changes
   useEffect(() => {
@@ -140,101 +137,28 @@ export function RotaBuilder() {
   function handleDragEnd(event: DragEndEvent) {
 
     setActiveId(null);
-    // Assignment logic
     const staffData = (event.active.data?.current as { staff?: Staff })?.staff;
     const shiftTemplateId = event.over?.id as string | undefined;
     if (!staffData || !shiftTemplateId) return;
 
-    // Get staff's current weekly hours
-    const currentHours = weeklyHours.get(staffData._id) ?? 0;
-
-    // Find the shift being assigned to, to get its duration
-    let shiftDuration = 0;
-    let foundShift = null;
-    for (const day of rotaDays) {
-      const shift = day.shifts.find(s => s.shiftTemplateId === shiftTemplateId);
-      if (shift && shift.startTime && shift.endTime) {
-        foundShift = shift;
-        // Calculate duration in hours
-        const [startH, startM] = shift.startTime.split(':').map(Number);
-        const [endH, endM] = shift.endTime.split(':').map(Number);
-        shiftDuration = (endH + endM / 60) - (startH + startM / 60);
-        if (shiftDuration < 0) shiftDuration += 24; // handle overnight shifts
-        break;
-      }
-    }
-
-    console.log('[handleDragEnd] staff:', staffData?.name, 'currentHours:', currentHours, 'shiftDuration:', shiftDuration, 'MAX_WEEKLY_HOURS:', MAX_WEEKLY_HOURS, 'foundShift:', foundShift);
-
-    // Warn if new total exceeds max
-    if (shiftDuration > 0 && currentHours + shiftDuration > MAX_WEEKLY_HOURS) {
-      alert('Warning: exceeds weekly hour limit');
-      console.warn('[handleDragEnd] Warning alert triggered: currentHours + shiftDuration =', currentHours + shiftDuration);
-    } else {
-      console.log('[handleDragEnd] No warning: currentHours + shiftDuration =', currentHours + shiftDuration);
-    }
-
     setRotaDays(prevDays => {
-      // Find the day and shift
-      for (let dayIdx = 0; dayIdx < prevDays.length; dayIdx++) {
-        const day = prevDays[dayIdx];
-        if (!Array.isArray(day.shifts)) continue;
-        const shiftIdx = day.shifts.findIndex(shift => shift.shiftTemplateId === shiftTemplateId);
-        if (shiftIdx !== -1) {
-          const shift = day.shifts[shiftIdx];
-          const roleMismatch = staffData.role !== shift.roleRequired;
-          const slotFull = shift.assignedStaffIds.length >= shift.quantityRequired;
-          const alreadyInThisShift = shift.assignedStaffIds.includes(staffData._id);
+      const outcome: AssignmentResult = applyAssignment(staffData, shiftTemplateId, prevDays);
 
-          // Enhanced double-booking prevention
-          // Check if staff is already assigned to another shift on this day with overlapping time
-          const overlappingAssignment = day.shifts.some(s => {
-            if (s === shift) return false; // skip current shift
-            if (!s.assignedStaffIds.includes(staffData._id)) return false;
-            // Compare times for overlap
-            // Both shifts must have startTime and endTime
-            if (!s.startTime || !s.endTime || !shift.startTime || !shift.endTime) return false;
-            return isOverlapping(s.startTime, s.endTime, shift.startTime, shift.endTime);
-          });
-
-          if (roleMismatch) {
-            console.warn(`Assignment rejected: Staff role (${staffData.role}) does not match required (${shift.roleRequired})`);
-            return prevDays;
-          }
-          if (slotFull) {
-            console.warn('Assignment rejected: Shift is already full');
-            return prevDays;
-          }
-          if (alreadyInThisShift) {
-            console.warn('Assignment rejected: Staff already assigned to this shift');
-            return prevDays;
-          }
-          if (overlappingAssignment) {
+      if (!outcome.success) {
+        if (outcome.reason === 'OVERLAPPING_SHIFT') {
+          setTimeout(() => {
             setTempError('Staff member is already assigned to overlapping shift');
             setTimeout(() => setTempError(null), 2500);
-            console.warn('Assignment rejected: Staff already assigned to overlapping shift on this day');
-            return prevDays;
-          }
-
-          // Assign staff immutably (always use _id)
-          const updatedShift = {
-            ...shift,
-            assignedStaffIds: [...shift.assignedStaffIds, staffData._id],
-          };
-          const updatedShifts = [
-            ...day.shifts.slice(0, shiftIdx),
-            updatedShift,
-            ...day.shifts.slice(shiftIdx + 1),
-          ];
-          const updatedDay = { ...day, shifts: updatedShifts };
-          return [
-            ...prevDays.slice(0, dayIdx),
-            updatedDay,
-            ...prevDays.slice(dayIdx + 1),
-          ];
+          }, 0);
         }
+        return prevDays;
       }
-      return prevDays;
+
+      if (outcome.warnings.includes('EXCEEDS_WEEKLY_HOURS')) {
+        setTimeout(() => alert('Warning: exceeds weekly hour limit'), 0);
+      }
+
+      return outcome.updatedDays;
     });
   }
 
@@ -939,34 +863,12 @@ export function RotaBuilder() {
                   <span>{s.name} (Hours: {hours}{warning && <span style={{color: hours >= MAX_WEEKLY_HOURS ? 'red' : 'orange', fontWeight: 'bold'}}>{warning}</span>})</span>
                   <button
                     onClick={() => {
-                      // Find the shift in the current day
-                      const day = rotaDays.find(d => d.dayOfWeek === dayOfWeek);
-                      const shift = day?.shifts.find(shiftObj => (shiftObj.shiftTemplateId || shiftObj.id) === shiftTemplateId);
-                      let shiftDuration = 0;
-                      if (shift && shift.startTime && shift.endTime) {
-                        const [startH, startM] = shift.startTime.split(':').map(Number);
-                        const [endH, endM] = shift.endTime.split(':').map(Number);
-                        shiftDuration = (endH + endM / 60) - (startH + startM / 60);
-                        if (shiftDuration < 0) shiftDuration += 24;
-                      }
-                      const currentHours = hoursMap.get(s._id) ?? 0;
-                      if (shiftDuration > 0 && currentHours + shiftDuration > MAX_WEEKLY_HOURS) {
+                      const outcome = applyAssignment(s, shiftTemplateId, rotaDays);
+                      if (!outcome.success) return;
+                      if (outcome.warnings.includes('EXCEEDS_WEEKLY_HOURS')) {
                         alert('Warning: exceeds weekly hour limit');
                       }
-                      setRotaDays(prevDays => prevDays.map(day => {
-                        if (day.dayOfWeek !== dayOfWeek) return day;
-                        return {
-                          ...day,
-                          shifts: day.shifts.map(shiftObj => {
-                            if ((shiftObj.shiftTemplateId || shiftObj.id) !== shiftTemplateId) return shiftObj;
-                            if ((shiftObj.assignedStaffIds || []).includes(s._id)) return shiftObj;
-                            return {
-                              ...shiftObj,
-                              assignedStaffIds: [...(shiftObj.assignedStaffIds || []), s._id],
-                            };
-                          })
-                        };
-                      }));
+                      setRotaDays(outcome.updatedDays);
                     }}
                   >Assign</button>
                 </div>

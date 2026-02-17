@@ -5,6 +5,7 @@
 
 import { StaffRotaItem, StaffShift } from '../services/rota.service';
 import { EnrichedShift, DayGroup, WeekGroup } from '../types/staffRota';
+import { calculateShiftDuration } from '../domain/scheduling';
 
 /**
  * Day names for display
@@ -38,26 +39,9 @@ export function enrichShift(shift: StaffShift): EnrichedShift {
   };
 }
 
-/**
- * Calculate duration in hours from start and end time
- * @param startTime - Format: "HH:MM"
- * @param endTime - Format: "HH:MM"
- * @returns Duration in hours
- */
-export function calculateShiftDuration(startTime: string, endTime: string): number {
-  const [startHour, startMin] = startTime.split(':').map(Number);
-  const [endHour, endMin] = endTime.split(':').map(Number);
-
-  const startMinutes = startHour * 60 + startMin;
-  let endMinutes = endHour * 60 + endMin;
-
-  // Handle shifts that cross midnight
-  if (endMinutes < startMinutes) {
-    endMinutes += 24 * 60;
-  }
-
-  return (endMinutes - startMinutes) / 60;
-}
+// calculateShiftDuration has moved to domain/scheduling.
+// It is imported above for use in enrichShift.
+// External consumers should import from '../domain/scheduling' directly.
 
 /**
  * Group shifts by day of week
