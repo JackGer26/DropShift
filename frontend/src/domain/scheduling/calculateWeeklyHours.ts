@@ -1,14 +1,16 @@
-import { RotaDay } from '../../types/rota';
+import { DomainDay } from './types';
 import { toMinutes } from './timeUtils';
 
 /**
- * Calculate total weekly hours per staff member from rotaDays.
- * Returns a Map<staffId, hours> with values rounded to 2 decimal places.
+ * Calculate total weekly hours per staff member from a set of days.
+ * Returns a Map<staffId, hours> rounded to 2 decimal places.
+ *
+ * Pure function — no side effects, no mutation.
  */
-export function calculateWeeklyHours(rotaDays: RotaDay[]): Map<string, number> {
+export function calculateWeeklyHours(days: DomainDay[]): Map<string, number> {
   const staffHours = new Map<string, number>();
 
-  for (const day of rotaDays) {
+  for (const day of days) {
     for (const shift of day.shifts || []) {
       if (!shift.startTime || !shift.endTime) continue;
       const durationMins = toMinutes(shift.endTime) - toMinutes(shift.startTime);

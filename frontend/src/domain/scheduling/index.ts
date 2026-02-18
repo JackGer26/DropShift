@@ -1,5 +1,8 @@
 // Domain types
 export type {
+  DomainStaff,
+  DomainShift,
+  DomainDay,
   AssignmentRejection,
   AssignmentWarning,
   AssignmentValidation,
@@ -17,5 +20,5 @@ export { isOverlapping } from './isOverlapping';
 export { calculateWeeklyHours } from './calculateWeeklyHours';
 export { getSuggestedStaff } from './getSuggestedStaff';
 
-// Scheduling engine
-export { canAssignStaffToShift, applyAssignment } from './schedulingEngine';
+// Assignment engine — the primary public API
+export { validateAssignment, calculateWarnings, applyAssignment } from './assignmentEngine';

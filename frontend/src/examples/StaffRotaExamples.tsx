@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useStaffRotas } from '../hooks/useStaffRotas';
+import { useStaffRotas } from '@/features/my-rota/useStaffRotas';
 
 /**
  * Example 1: Simple usage - Display all published rotas for a staff member

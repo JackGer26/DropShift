@@ -1,31 +1,34 @@
-import { Staff } from '../../types/staff';
-import { RotaDay, RotaShift } from '../../types/rota';
+import { DomainStaff, DomainShift, DomainDay } from './types';
 import { calculateWeeklyHours } from './calculateWeeklyHours';
 import { isOverlapping } from './isOverlapping';
 
 /**
- * Suggest staff for a shift based on role, availability, and weekly hours.
- * Returns candidates sorted by lowest weekly hours (most available first).
+ * Suggest eligible staff for a shift.
+ *
+ * Filters by role, excludes already-assigned and overlapping staff,
+ * then sorts by lowest weekly hours (most available first).
+ *
+ * Pure function — no side effects, no mutation.
  */
 export function getSuggestedStaff(
-  shift: RotaShift,
+  shift: DomainShift,
   dayOfWeek: number,
-  rotaDays: RotaDay[],
-  staffList: Staff[]
-): Staff[] {
-  // 1. Filter by roleRequired
+  days: DomainDay[],
+  staffList: DomainStaff[],
+): DomainStaff[] {
+  // 1. Role match only
   let candidates = staffList.filter(s => s.role === shift.roleRequired);
 
-  // 2. Exclude already assigned to this shift
-  candidates = candidates.filter(s => !(shift.assignedStaffIds || []).includes(s._id));
+  // 2. Exclude staff already assigned to this shift
+  candidates = candidates.filter(s => !(shift.assignedStaffIds || []).includes(s.id));
 
-  // 3. Exclude staff assigned to overlapping shifts on the same day
-  const day = rotaDays.find(d => d.dayOfWeek === dayOfWeek);
+  // 3. Exclude staff assigned to an overlapping shift on the same day
+  const day = days.find(d => d.dayOfWeek === dayOfWeek);
   candidates = candidates.filter(staff => {
     if (!day) return true;
     for (const otherShift of day.shifts || []) {
-      if (otherShift === shift) continue;
-      if (!(otherShift.assignedStaffIds || []).includes(staff._id)) continue;
+      if (otherShift.shiftTemplateId === shift.shiftTemplateId) continue;
+      if (!(otherShift.assignedStaffIds || []).includes(staff.id)) continue;
       if (!otherShift.startTime || !otherShift.endTime || !shift.startTime || !shift.endTime) continue;
       if (isOverlapping(otherShift.startTime, otherShift.endTime, shift.startTime, shift.endTime)) {
         return false;
@@ -34,15 +37,9 @@ export function getSuggestedStaff(
     return true;
   });
 
-  // 4. Calculate weekly hours
-  const hoursMap = calculateWeeklyHours(rotaDays);
-
-  // 5. Sort by lowest weekly hours
-  candidates.sort((a, b) => {
-    const ha = hoursMap.get(a._id) || 0;
-    const hb = hoursMap.get(b._id) || 0;
-    return ha - hb;
-  });
+  // 4. Sort by lowest weekly hours so the most available staff appear first
+  const hoursMap = calculateWeeklyHours(days);
+  candidates.sort((a, b) => (hoursMap.get(a.id) || 0) - (hoursMap.get(b.id) || 0));
 
   return candidates;
 }

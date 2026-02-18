@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { MyRotaPage } from '../pages/MyRotaPage';
+import { MyRotaPage } from '@/features/my-rota';
 
 // Example auth context (you'd implement this)
 interface AuthContextType {
