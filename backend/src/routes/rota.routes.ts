@@ -2,13 +2,15 @@
 // Express router for rota endpoints
 import { Router } from 'express';
 import { createRota, getAllRotas, getRotaById, updateRota, copyPreviousWeek, getStaffRotas, deleteRota } from '../controllers/rota.controller';
+import { validate } from '../middleware/validate';
+import { copyPreviousWeekSchema } from '../validation/rota.schemas';
 
 const router = Router();
 
 // Create rota
 router.post('/', createRota);
 // Copy previous week's rota
-router.post('/copy-previous-week', copyPreviousWeek);
+router.post('/copy-previous-week', validate(copyPreviousWeekSchema), copyPreviousWeek);
 // Get published rotas for a specific staff member (staff-facing endpoint)
 router.get('/staff/:staffId', getStaffRotas);
 // Get all rotas

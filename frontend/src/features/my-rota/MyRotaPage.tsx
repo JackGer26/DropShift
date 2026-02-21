@@ -18,7 +18,8 @@ import React, { useMemo, useState } from 'react';
 import { useStaffRotas } from './useStaffRotas';
 import { transformRotasToWeeks, getUpcomingWeeksRange } from '@/utils/rotaUtils';
 import { RotaList } from './components/RotaList';
-import { LoadingState, ErrorState, EmptyState } from './components/StateComponents';
+import { LoadingState, ErrorState } from './components/StateComponents';
+import { EmptyState } from '@/ui';
 
 interface MyRotaPageProps {
   staffId: string;
@@ -93,7 +94,10 @@ export const MyRotaPage: React.FC<MyRotaPageProps> = ({ staffId }) => {
 
         {/* Empty State */}
         {!loading && !error && weekGroups.length === 0 && (
-          <EmptyState />
+          <EmptyState
+            title="No rotas found"
+            description="You don't have any published rotas yet. Check back later or contact your manager."
+          />
         )}
 
         {/* Data Display */}

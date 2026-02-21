@@ -1,16 +1,18 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { fetchStaff, createStaff, deleteStaff } from '@/services/staff.service';
 import { Staff as StaffType, Role } from '@/types/staff';
+import { Button, Card, EmptyState, FormField, Input, PageContainer, RoleBadge } from '@/ui';
 
+const selectClass =
+  'text-sm border border-gray-300 rounded-md px-3 py-2 bg-white text-gray-800 ' +
+  'focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900';
 
 export function StaffPage() {
   const [staffList, setStaffList] = useState<StaffType[]>([]);
-  const [name, setName] = useState('');
-  const [role, setRole] = useState<Role>(Role.Manager);
+  const [name, setName]           = useState('');
+  const [role, setRole]           = useState<Role>(Role.Manager);
 
-  useEffect(() => {
-    loadStaff();
-  }, []);
+  useEffect(() => { loadStaff(); }, []);
 
   async function loadStaff() {
     const staff = await fetchStaff();
@@ -31,33 +33,53 @@ export function StaffPage() {
   }
 
   return (
-    <div>
-      <h2>Staff List</h2>
-      <ul>
-        {staffList.map((s) => (
-          <li key={s._id}>
-            {s.name} ({s.role})
-            <button onClick={() => handleDelete(s._id)} style={{ marginLeft: 8 }}>Delete</button>
-          </li>
+    <PageContainer title="Staff">
+      {/* Staff list */}
+      <Card bodyClassName="divide-y divide-gray-100">
+        {staffList.map(s => (
+          <div key={s._id} className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-800">{s.name}</span>
+              <RoleBadge role={s.role} />
+            </div>
+            <Button variant="danger" size="sm" onClick={() => handleDelete(s._id)}>
+              Delete
+            </Button>
+          </div>
         ))}
-      </ul>
+        {staffList.length === 0 && (
+          <EmptyState title="No staff added yet" description="Add your first staff member using the form below." />
+        )}
+      </Card>
 
-      <h3>Add Staff</h3>
-      <form onSubmit={handleSubmit}>
-        <input
-          type="text"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="Name"
-          required
-        />
-        <select value={role} onChange={e => setRole(e.target.value as Role)}>
-          <option value={Role.Manager}>Manager</option>
-          <option value={Role.AssistantManager}>Assistant Manager</option>
-          <option value={Role.SalesAssistant}>Sales Assistant</option>
-        </select>
-        <button type="submit">Add Staff</button>
-      </form>
-    </div>
+      {/* Add staff form */}
+      <Card title="Add Staff" className="mt-5">
+        <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
+          <FormField label="Name" htmlFor="staff-name">
+            <Input
+              id="staff-name"
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Full name"
+              required
+            />
+          </FormField>
+          <FormField label="Role" htmlFor="staff-role">
+            <select
+              id="staff-role"
+              value={role}
+              onChange={e => setRole(e.target.value as Role)}
+              className={selectClass}
+            >
+              <option value={Role.Manager}>Manager</option>
+              <option value={Role.AssistantManager}>Assistant Manager</option>
+              <option value={Role.SalesAssistant}>Sales Assistant</option>
+            </select>
+          </FormField>
+          <Button type="submit" variant="primary">Add Staff</Button>
+        </form>
+      </Card>
+    </PageContainer>
   );
 }

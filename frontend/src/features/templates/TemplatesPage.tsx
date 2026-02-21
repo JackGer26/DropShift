@@ -1,26 +1,23 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { fetchTemplates, createTemplate, deleteTemplate } from '@/services/template.service';
 import { RotaTemplate, DayTemplate } from '@/types/template';
 import { TemplateBuilder } from './components/TemplateBuilder';
+import { Button, Card, EmptyState, FormField, Input, PageContainer } from '@/ui';
 
 function createEmptyDay(dayOfWeek: number): DayTemplate {
-  return {
-    dayOfWeek,
-    shifts: [],
-  };
+  return { dayOfWeek, shifts: [] };
 }
+
+// Set your default locationId here (should be a valid 24-char ObjectId)
+const DEFAULT_LOCATION_ID = '699094c87ec69da4f15fc047';
+
 export function TemplatesPage() {
-  const [templates, setTemplates] = useState<RotaTemplate[]>([]);
-  const [name, setName] = useState('');
+  const [templates, setTemplates]     = useState<RotaTemplate[]>([]);
+  const [name, setName]               = useState('');
   const [showBuilder, setShowBuilder] = useState(false);
   const [builderDays, setBuilderDays] = useState<DayTemplate[]>([]);
 
-  // Set your default locationId here (should be a valid 24-char ObjectId)
-  const DEFAULT_LOCATION_ID = '699094c87ec69da4f15fc047';
-
-  useEffect(() => {
-    loadTemplates();
-  }, []);
+  useEffect(() => { loadTemplates(); }, []);
 
   async function loadTemplates() {
     const data = await fetchTemplates();
@@ -47,41 +44,50 @@ export function TemplatesPage() {
   }
 
   return (
-    <div>
-      <h2>Rota Templates</h2>
-      <ul>
+    <PageContainer title="Templates">
+      {/* Template list */}
+      <Card bodyClassName="divide-y divide-gray-100">
         {templates.map(t => (
-          <li key={t._id}>
-            {t.name}
-            <button onClick={() => handleDelete(t._id)} style={{ marginLeft: 8 }}>Delete</button>
-          </li>
+          <div key={t._id} className="flex items-center justify-between px-4 py-3">
+            <span className="text-sm font-medium text-gray-800">{t.name}</span>
+            <Button variant="danger" size="sm" onClick={() => handleDelete(t._id)}>
+              Delete
+            </Button>
+          </div>
         ))}
-      </ul>
+        {templates.length === 0 && (
+          <EmptyState title="No templates yet" description="Create your first template using the form below." />
+        )}
+      </Card>
 
-      <h3>Add Template</h3>
-      {!showBuilder ? (
-        <form onSubmit={handleStartBuilder}>
-          <input
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="Template Name"
-            required
-          />
-          <button type="submit">Create Template</button>
-        </form>
-      ) : (
-        <div>
-          <TemplateBuilder
-            // Pass days state up via callback
-            // Use a controlled builderDays state
-            days={builderDays}
-            setDays={setBuilderDays}
-          />
-          <button onClick={handleSaveTemplate}>Save Template</button>
-          <button onClick={() => { setShowBuilder(false); setBuilderDays([]); }}>Cancel</button>
-        </div>
-      )}
-    </div>
+      {/* Add template */}
+      <Card title="New Template" className="mt-5">
+        {!showBuilder ? (
+          <form onSubmit={handleStartBuilder} className="flex flex-wrap items-end gap-3">
+            <FormField label="Template Name" htmlFor="template-name">
+              <Input
+                id="template-name"
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Summer Rota"
+                required
+              />
+            </FormField>
+            <Button type="submit" variant="primary">Create Template</Button>
+          </form>
+        ) : (
+          <div>
+            <TemplateBuilder days={builderDays} setDays={setBuilderDays} />
+            <div className="flex items-center gap-2 mt-4">
+              <Button variant="primary" onClick={handleSaveTemplate}>Save Template</Button>
+              <Button variant="secondary" onClick={() => { setShowBuilder(false); setBuilderDays([]); }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+    </PageContainer>
   );
 }

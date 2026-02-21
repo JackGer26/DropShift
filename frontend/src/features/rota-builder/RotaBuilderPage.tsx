@@ -12,7 +12,7 @@ import { validateAssignment, calculateWarnings, applyAssignment, calculateWeekly
 import type { DomainStaff } from '@/domain/scheduling';
 import { getStartOfWeek, getNextWeek, getPreviousWeek } from '@/utils/weekUtils';
 import { formatWeekDateLong } from '@/utils/rotaUtils';
-import { PageContainer } from '@/ui';
+import { Card, PageContainer, Button } from '@/ui';
 
 export function RotaBuilderPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -367,12 +367,9 @@ export function RotaBuilderPage() {
 
   // Staff pool sidebar — draggable prop toggled by isDraftEditable
   const staffPanel = (
-    <aside className="w-52 shrink-0 bg-white border border-gray-200 rounded-lg p-3 flex flex-col">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-        Staff Pool
-      </h3>
+    <Card title="Staff Pool" className="w-52 shrink-0">
       {staff.length === 0 ? (
-        <p className="text-xs text-gray-400">No staff found.</p>
+        <p className="text-xs text-gray-400 text-center">No staff found.</p>
       ) : (
         <div className="space-y-1.5 overflow-y-auto">
           {staff.map(s => (
@@ -380,31 +377,29 @@ export function RotaBuilderPage() {
           ))}
         </div>
       )}
-    </aside>
+    </Card>
   );
 
   // Rota grid — shared between draft and published modes
-  const rotaGrid = rotaDays.length > 0 ? (
-    <div
-      className="overflow-x-auto"
-    >
-      <div
-        style={{ display: 'grid', gridTemplateColumns: `repeat(${rotaDays.length}, minmax(140px, 1fr))`, gap: '8px' }}
-      >
-        {rotaDays.map(day => (
-          <DayColumn
-            key={day.dayOfWeek}
-            day={day}
-            staff={staff}
-            onSelectShift={handleSelectShift}
-          />
-        ))}
-      </div>
-    </div>
-  ) : (
-    <div className="flex items-center justify-center h-32 text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg">
-      Select a template to view the rota grid.
-    </div>
+  const rotaGrid = (
+    <Card bodyClassName={rotaDays.length > 0 ? 'p-4 overflow-x-auto' : 'flex items-center justify-center h-32'}>
+      {rotaDays.length > 0 ? (
+        <div
+          style={{ display: 'grid', gridTemplateColumns: `repeat(${rotaDays.length}, minmax(140px, 1fr))`, gap: '8px' }}
+        >
+          {rotaDays.map(day => (
+            <DayColumn
+              key={day.dayOfWeek}
+              day={day}
+              staff={staff}
+              onSelectShift={handleSelectShift}
+            />
+          ))}
+        </div>
+      ) : (
+        <span className="text-sm text-gray-400">Select a template to view the rota grid.</span>
+      )}
+    </Card>
   );
 
   // Two-panel layout (staff pool + grid)
@@ -469,7 +464,7 @@ export function RotaBuilderPage() {
       </div>
 
       {/* ── Controls bar: dropdowns + action buttons ── */}
-      <div className="flex flex-wrap items-end gap-5 p-4 bg-white border border-gray-200 rounded-lg mb-5">
+      <Card className="mb-5" bodyClassName="flex flex-wrap items-end gap-5 p-4">
 
         {/* Published rotas */}
         <div className="flex flex-col gap-1">
@@ -501,12 +496,9 @@ export function RotaBuilderPage() {
                 })}
             </select>
             {selectedRota?.status === 'published' && (
-              <button
-                onClick={() => handleDeleteRota(selectedRotaId!, 'published')}
-                className="text-sm px-2.5 py-1.5 rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
-              >
+              <Button variant="danger" onClick={() => handleDeleteRota(selectedRotaId!, 'published')}>
                 Delete
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -541,12 +533,9 @@ export function RotaBuilderPage() {
                 })}
             </select>
             {selectedRota?.status === 'draft' && (
-              <button
-                onClick={() => handleDeleteRota(selectedRotaId!, 'draft')}
-                className="text-sm px-2.5 py-1.5 rounded-md border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors"
-              >
+              <Button variant="danger" onClick={() => handleDeleteRota(selectedRotaId!, 'draft')}>
                 Delete
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -571,7 +560,9 @@ export function RotaBuilderPage() {
 
         {/* Action buttons — flush right */}
         <div className="ml-auto flex items-center gap-2">
-          <button
+          <Button
+            variant="primary"
+            disabled={!!isEditingDisabled}
             onClick={() => {
               if (!selectedTemplateId || !selectedTemplate) {
                 alert('Please select a template.');
@@ -583,24 +574,25 @@ export function RotaBuilderPage() {
               }
               saveRota({ locationId: selectedTemplate.locationId, templateId: selectedTemplateId, rotaDays });
             }}
-            disabled={!!isEditingDisabled}
-            className="text-sm px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             Save Draft
-          </button>
+          </Button>
 
           {!isPublishedThisWeek && (
-            <button
-              onClick={handleCopyPreviousWeek}
+            <Button
+              variant="secondary"
               disabled={!selectedTemplate}
               title={!selectedTemplate ? 'Select a template first' : 'Copy assignments from previous week'}
-              className="text-sm px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              onClick={handleCopyPreviousWeek}
             >
               Copy Previous Week
-            </button>
+            </Button>
           )}
 
-          <button
+          <Button
+            variant="success"
+            disabled={rotaStatus === 'published'}
+            title={rotaStatus === 'published' ? 'This rota is already published' : 'Publish this rota'}
             onClick={async () => {
               if (!selectedRotaId) { alert('No rota selected to publish.'); return; }
               try {
@@ -618,14 +610,11 @@ export function RotaBuilderPage() {
                 alert('Failed to publish rota. See console for details.');
               }
             }}
-            disabled={rotaStatus === 'published'}
-            title={rotaStatus === 'published' ? 'This rota is already published' : 'Publish this rota'}
-            className="text-sm px-3 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             Publish
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {/* ── Main layout: staff pool + rota grid ── */}
       {/* Conditionally wrap in DndContext for drag-and-drop in draft mode */}
@@ -654,10 +643,7 @@ export function RotaBuilderPage() {
         if (!suggestions.length) return null;
 
         return (
-          <div className="mt-4 p-4 bg-white border border-gray-200 rounded-lg">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-              Suggested Staff
-            </h3>
+          <Card title="Suggested Staff" className="mt-4">
             <div className="space-y-2">
               {suggestions.map(s => {
                 const hours = hoursMap.get(s.id) ?? 0;
@@ -673,18 +659,20 @@ export function RotaBuilderPage() {
                         {hours}h
                       </span>
                       {isOver && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">
+                        <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">
                           Over limit
                         </span>
                       )}
                       {!isOver && isNear && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+                        <span className="inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
                           Near limit
                         </span>
                       )}
                     </div>
-                    <button
-                      className="shrink-0 text-xs px-2.5 py-1 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="shrink-0"
                       onClick={() => {
                         const validation = validateAssignment(s, shift, day);
                         if (!validation.valid) return;
@@ -698,12 +686,12 @@ export function RotaBuilderPage() {
                       }}
                     >
                       Assign
-                    </button>
+                    </Button>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </Card>
         );
       })()}
     </PageContainer>

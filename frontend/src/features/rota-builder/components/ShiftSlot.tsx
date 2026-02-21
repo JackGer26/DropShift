@@ -60,15 +60,15 @@ export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff, dayOfWeek, o
   const slotClass = invalidDrop
     ? 'border-red-400 bg-red-50 animate-shake'
     : isFull
-    ? 'border-emerald-300 bg-emerald-50'
+    ? 'border-green-200 bg-green-50'
     : isOver
-    ? 'border-blue-400 bg-blue-50'
+    ? 'border-blue-300 bg-blue-50'
     : 'border-gray-200 bg-white hover:border-gray-300';
 
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-md border p-3 transition-colors cursor-pointer ${slotClass}`}
+      className={`rounded-md border p-3 transition-colors duration-150 cursor-pointer ${slotClass}`}
       onClick={() => {
         if (onSelectShift && (shift as any).shiftTemplateId && typeof dayOfWeek === 'number') {
           onSelectShift((shift as any).shiftTemplateId, dayOfWeek);
@@ -80,7 +80,7 @@ export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff, dayOfWeek, o
         <span className="text-sm font-semibold text-gray-800 tabular-nums">
           {shift.startTime} – {shift.endTime}
         </span>
-        <span className={`text-xs font-medium tabular-nums ${isFull ? 'text-emerald-600' : 'text-gray-400'}`}>
+        <span className={`text-xs font-medium tabular-nums ${isFull ? 'text-green-600' : 'text-gray-400'}`}>
           {filled}/{total}
         </span>
       </div>
