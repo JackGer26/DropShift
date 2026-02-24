@@ -26,7 +26,7 @@ const ShiftTemplateSchema = new Schema<IShiftTemplate>({
   endTime: { type: String, required: true },
   roleRequired: { type: String, enum: Object.values(Role), required: true },
   quantityRequired: { type: Number, required: true },
-}, { _id: false });
+}); // _id enabled so each shift gets a stable MongoDB-generated ID
 
 const DayTemplateSchema = new Schema<IDayTemplate>({
   dayOfWeek: { type: Number, required: true },

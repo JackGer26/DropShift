@@ -7,15 +7,23 @@ const ROLE_STYLES: Record<string, string> = {
   [Role.SalesAssistant]:   'bg-teal-100 text-teal-700',
 };
 
+const ROLE_ABBREV: Record<string, string> = {
+  [Role.Manager]:          'Mgr',
+  [Role.AssistantManager]: 'AM',
+  [Role.SalesAssistant]:   'SA',
+};
+
 interface RoleBadgeProps {
   role: string;
+  abbreviated?: boolean;
 }
 
-export function RoleBadge({ role }: RoleBadgeProps) {
+export function RoleBadge({ role, abbreviated = false }: RoleBadgeProps) {
   const styles = ROLE_STYLES[role] ?? 'bg-gray-100 text-gray-600';
+  const label  = abbreviated ? (ROLE_ABBREV[role] ?? role) : role;
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${styles}`}>
-      {role}
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap shrink-0 ${styles}`}>
+      {label}
     </span>
   );
 }

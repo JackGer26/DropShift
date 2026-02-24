@@ -20,6 +20,7 @@ export interface RotaDay {
 // Represents a scheduled rota for a week
 export interface Rota {
 	id: string;
+	name?: string;
 	locationId: string;
 	templateId: string;
 	weekStartDate: string; // ISO date string (e.g., '2026-02-11')

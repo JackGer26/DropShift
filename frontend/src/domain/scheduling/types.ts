@@ -14,6 +14,7 @@ export interface DomainStaff {
   id: string;   // domain-neutral identifier — not _id
   name: string;
   role: string;
+  contractedHours?: number;
 }
 
 /** Minimum shift record the engine needs */

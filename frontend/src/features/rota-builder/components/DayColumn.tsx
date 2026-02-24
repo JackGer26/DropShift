@@ -11,10 +11,12 @@ const DAY_NAMES: Record<number, string> = {
 interface DayColumnProps {
   day: RotaDay;
   staff: Staff[];
-  onSelectShift: (shiftTemplateId: string, dayOfWeek: number) => void;
+  weeklyHours?: Map<string, number>;
+  onSelectShift?: (shiftTemplateId: string, dayOfWeek: number) => void;
+  onRemoveStaff?: (shiftTemplateId: string, staffId: string, dayOfWeek: number) => void;
 }
 
-export function DayColumn({ day, staff, onSelectShift }: DayColumnProps) {
+export function DayColumn({ day, staff, weeklyHours, onSelectShift, onRemoveStaff }: DayColumnProps) {
   const dayName = DAY_NAMES[day.dayOfWeek] ?? `Day ${day.dayOfWeek}`;
 
   return (
@@ -32,8 +34,12 @@ export function DayColumn({ day, staff, onSelectShift }: DayColumnProps) {
               key={shift.id}
               shift={shift}
               staff={staff}
+              weeklyHours={weeklyHours}
               dayOfWeek={day.dayOfWeek}
               onSelectShift={onSelectShift}
+              onRemoveStaff={onRemoveStaff
+                ? (staffId) => onRemoveStaff((shift as any).shiftTemplateId || shift.id, staffId, day.dayOfWeek)
+                : undefined}
             />
           ))
         ) : (

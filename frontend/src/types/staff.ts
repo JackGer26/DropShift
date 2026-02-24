@@ -11,5 +11,6 @@ export interface Staff {
 	id?: string; // MongoDB string ID
 	name: string;
 	role: Role;
+	contractedHours?: number;
 	locationIds: string[]; // IDs of locations where staff can work
 }

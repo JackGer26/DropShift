@@ -15,6 +15,12 @@ export async function createStaff(data: Partial<Staff>): Promise<Staff> {
   return response.data.data;
 }
 
+// Update a staff member by ID
+export async function updateStaff(id: string, data: Partial<Staff>): Promise<Staff> {
+  const response = await api.patch<ApiResponse<Staff>>(`/staff/${id}`, data);
+  return response.data.data;
+}
+
 // Delete a staff member by ID
 export async function deleteStaff(id: string): Promise<{ message: string }> {
   const response = await api.delete<{ success: boolean; message: string }>(`/staff/${id}`);

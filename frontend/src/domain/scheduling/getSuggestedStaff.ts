@@ -37,9 +37,16 @@ export function getSuggestedStaff(
     return true;
   });
 
-  // 4. Sort by lowest weekly hours so the most available staff appear first
+  // 4. Sort: within-contracted staff first (by lowest hours), over-contracted last
   const hoursMap = calculateWeeklyHours(days);
-  candidates.sort((a, b) => (hoursMap.get(a.id) || 0) - (hoursMap.get(b.id) || 0));
+  candidates.sort((a, b) => {
+    const aHours = hoursMap.get(a.id) ?? 0;
+    const bHours = hoursMap.get(b.id) ?? 0;
+    const aOver = a.contractedHours !== undefined && aHours > a.contractedHours;
+    const bOver = b.contractedHours !== undefined && bHours > b.contractedHours;
+    if (aOver !== bOver) return aOver ? 1 : -1;
+    return aHours - bHours;
+  });
 
   return candidates;
 }

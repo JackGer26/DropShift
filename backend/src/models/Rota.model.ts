@@ -11,6 +11,7 @@ export interface IDayRota {
 }
 
 export interface IRota extends Document {
+  name?: string;
   locationId: mongoose.Types.ObjectId;
   templateId: mongoose.Types.ObjectId;
   weekStartDate: string;
@@ -31,6 +32,7 @@ const DayRotaSchema = new Schema<IDayRota>({
 }, { _id: false });
 
 const RotaSchema = new Schema<IRota>({
+  name: { type: String },
   locationId: { type: Schema.Types.ObjectId, ref: 'Location', required: true },
   templateId: { type: Schema.Types.ObjectId, ref: 'RotaTemplate', required: true },
   weekStartDate: { type: String, required: true },

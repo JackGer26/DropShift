@@ -8,24 +8,26 @@ import { RoleBadge } from '@/ui/RoleBadge';
 type ShiftSlotProps = {
   shift: ShiftTemplate | RotaShift;
   staff?: Staff[];
+  weeklyHours?: Map<string, number>;
   dayOfWeek?: number;
   onSelectShift?: (shiftTemplateId: string, dayOfWeek: number) => void;
+  onRemoveStaff?: (staffId: string) => void;
 };
 
-export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff, dayOfWeek, onSelectShift }) => {
+export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff, weeklyHours, dayOfWeek, onSelectShift, onRemoveStaff }) => {
   const [invalidDrop, setInvalidDrop] = useState(false);
   const droppableId = String((shift as any).shiftTemplateId || shift.id);
   const { isOver, setNodeRef, active } = useDroppable({ id: droppableId });
 
-  // Map assignedStaffIds → names, compute fill state
-  let assignedNames: string[] = [];
+  // Map assignedStaffIds → { id, name } pairs, compute fill state
+  let assignedStaff: { id: string; name: string }[] = [];
   let filled = 0;
   let total = 0;
   let isFull = false;
   if ('assignedStaffIds' in shift && Array.isArray(shift.assignedStaffIds) && staff) {
-    assignedNames = shift.assignedStaffIds
-      .map(id => staff.find(s => s._id === id)?.name)
-      .filter(Boolean) as string[];
+    assignedStaff = shift.assignedStaffIds
+      .map(id => { const member = staff.find(s => s._id === id); return member ? { id, name: member.name } : null; })
+      .filter(Boolean) as { id: string; name: string }[];
     filled = shift.assignedStaffIds.length;
     total = shift.quantityRequired;
     isFull = filled >= total;
@@ -90,14 +92,33 @@ export const ShiftSlot: React.FC<ShiftSlotProps> = ({ shift, staff, dayOfWeek, o
         <RoleBadge role={shift.roleRequired} />
       </div>
 
-      {/* Assigned staff names */}
-      {assignedNames.length > 0 && (
+      {/* Assigned staff */}
+      {assignedStaff.length > 0 && (
         <ul className="space-y-0.5 mt-1">
-          {assignedNames.map(name => (
-            <li key={name} className="text-xs text-gray-600 truncate leading-tight">
-              {name}
-            </li>
-          ))}
+          {assignedStaff.map(({ id, name }) => {
+            const staffMember = staff?.find(s => s._id === id);
+            const memberHours = weeklyHours?.get(id) ?? 0;
+            const isOverContracted =
+              staffMember?.contractedHours !== undefined &&
+              memberHours > staffMember.contractedHours;
+            return (
+              <li key={id} className="flex items-center justify-between gap-1">
+                <span className={`text-xs leading-tight flex items-center gap-1 ${isOverContracted ? 'text-amber-600 font-medium' : 'text-gray-600'}`}>
+                  {name}
+                  {isOverContracted && (
+                    <span title={`Over contracted hours (${staffMember!.contractedHours}h contracted, ${memberHours.toFixed(1)}h this week)`}>⚠</span>
+                  )}
+                </span>
+                {onRemoveStaff && (
+                  <button
+                    className="shrink-0 text-gray-300 hover:text-red-500 transition-colors leading-none text-sm"
+                    onClick={e => { e.stopPropagation(); onRemoveStaff(id); }}
+                    aria-label={`Remove ${name}`}
+                  >×</button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
