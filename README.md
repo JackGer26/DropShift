@@ -2,7 +2,7 @@
 
 A full-stack workforce scheduling and rota management platform built for hospitality and retail businesses. Managers can build weekly rotas, manage staff and locations, and publish schedules — while staff access a clean, mobile-optimised personal schedule view with no admin access.
 
-**Link to project:** _(coming soon)_
+**Link to project:** [https://shiftdrop.netlify.app/login](https://shiftdrop.netlify.app/login)
 
 ---
 
@@ -14,7 +14,7 @@ A live demo is available at the link above. Use the credentials below to explore
 |------|-----|----------|----------|
 | Admin | `/login` | `admin` | `ShiftDrop2025` |
 
-Once logged in you can create locations, add staff, build shift templates, and publish a weekly rota. To see the staff-facing schedule view, navigate to `/my-rota/<staffId>` — the staff ID is visible in the URL when managing a staff member, or use my-rota/698cbbcac9b7d6801c921427.
+Once logged in you can create locations, add staff, build shift templates, and publish a weekly rota. To see the staff-facing schedule view, navigate to `/my-rota/<staffId>` — the staff ID is visible in the URL when managing a staff member, or use `/my-rota/698cbbcac9b7d6801c921427` as a demo link.
 
 ---
 
