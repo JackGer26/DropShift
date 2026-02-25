@@ -10,7 +10,11 @@ const envSchema = z.object({
   PORT:         z.coerce.number().int().positive().default(5000),
   MONGO_URI:    z.string().min(1, 'MONGO_URI is required'),
   FRONTEND_URL: z.string().url('FRONTEND_URL must be a valid URL').optional(),
-});
+  JWT_SECRET:   z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+}).refine(
+  data => data.NODE_ENV !== 'production' || !!data.FRONTEND_URL,
+  { message: 'FRONTEND_URL is required in production', path: ['FRONTEND_URL'] }
+);
 
 const result = envSchema.safeParse(process.env);
 
@@ -33,6 +37,7 @@ declare global {
       PORT?: string;
       MONGO_URI?: string;
       FRONTEND_URL?: string;
+      JWT_SECRET?: string;
     }
   }
 }

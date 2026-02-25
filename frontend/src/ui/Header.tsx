@@ -1,5 +1,6 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { logout } from '@/services/auth.service';
 
 const PAGE_TITLES: Record<string, string> = {
   '/':          'Dashboard',
@@ -20,6 +21,12 @@ interface HeaderProps {
 
 export function Header({ onMenuToggle }: HeaderProps) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    logout();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <header className="h-14 shrink-0 border-b border-gray-200 bg-white flex items-center gap-3 px-4 sm:px-6">
@@ -34,7 +41,14 @@ export function Header({ onMenuToggle }: HeaderProps) {
         </svg>
       </button>
 
-      <h1 className="text-sm font-medium text-gray-700">{getTitle(pathname)}</h1>
+      <h1 className="text-sm font-medium text-gray-700 flex-1">{getTitle(pathname)}</h1>
+
+      <button
+        onClick={handleLogout}
+        className="text-xs font-medium text-gray-500 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100 transition-colors"
+      >
+        Sign out
+      </button>
     </header>
   );
 }

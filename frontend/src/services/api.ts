@@ -8,12 +8,23 @@ const api = axios.create({
 	withCredentials: false,
 });
 
-// Basic response error logging
+// Attach JWT token to every request if present
+api.interceptors.request.use(config => {
+	const token = localStorage.getItem('sd_token');
+	if (token) {
+		config.headers.Authorization = `Bearer ${token}`;
+	}
+	return config;
+});
+
+// Handle expired / invalid tokens — redirect to login
 api.interceptors.response.use(
 	response => response,
 	error => {
-		// eslint-disable-next-line no-console
-		console.error('API error:', error);
+		if (error.response?.status === 401 && window.location.pathname !== '/login') {
+			localStorage.removeItem('sd_token');
+			window.location.href = '/login';
+		}
 		return Promise.reject(error);
 	}
 );

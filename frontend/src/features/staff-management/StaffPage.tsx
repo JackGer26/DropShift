@@ -3,7 +3,7 @@ import { fetchStaff, createStaff, updateStaff, deleteStaff } from '@/services/st
 import { fetchLocations } from '@/services/location.service';
 import { Staff as StaffType, Role } from '@/types/staff';
 import { Location } from '@/types/location';
-import { Button, Card, EmptyState, FormField, Input, PageContainer, RoleBadge } from '@/ui';
+import { Button, Card, EmptyState, FormField, Input, Modal, PageContainer, RoleBadge } from '@/ui';
 
 const selectClass =
   'text-sm border border-gray-300 rounded-md px-3 py-2 bg-white text-gray-800 ' +
@@ -48,13 +48,14 @@ function LocationCheckboxes({
 }
 
 export function StaffPage() {
-  const [staffList, setStaffList]     = useState<StaffType[]>([]);
-  const [locations, setLocations]     = useState<Location[]>([]);
-  const [showAll, setShowAll]         = useState(false);
-  const [name, setName]               = useState('');
-  const [role, setRole]               = useState<Role>(Role.Manager);
-  const [hours, setHours]             = useState('');
-  const [locationIds, setLocationIds] = useState<string[]>([]);
+  const [staffList, setStaffList]         = useState<StaffType[]>([]);
+  const [locations, setLocations]         = useState<Location[]>([]);
+  const [showAll, setShowAll]             = useState(false);
+  const [name, setName]                   = useState('');
+  const [role, setRole]                   = useState<Role>(Role.Manager);
+  const [hours, setHours]                 = useState('');
+  const [locationIds, setLocationIds]     = useState<string[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -86,8 +87,10 @@ export function StaffPage() {
     await loadData();
   }
 
-  async function handleDelete(id: string) {
-    await deleteStaff(id);
+  async function handleDelete() {
+    if (!confirmDeleteId) return;
+    await deleteStaff(confirmDeleteId);
+    setConfirmDeleteId(null);
     await loadData();
   }
 
@@ -120,7 +123,7 @@ export function StaffPage() {
                     onBlur={e => handleHoursBlur(s._id, e.target.value)}
                   />
                 </label>
-                <Button variant="danger" size="sm" onClick={() => handleDelete(s._id)}>
+                <Button variant="danger" size="sm" onClick={() => setConfirmDeleteId(s._id)}>
                   Delete
                 </Button>
               </div>
@@ -202,6 +205,15 @@ export function StaffPage() {
           <Button type="submit" variant="primary">Add Staff</Button>
         </form>
       </Card>
+      <Modal
+        isOpen={confirmDeleteId !== null}
+        title="Delete staff member?"
+        message={`Are you sure you want to delete ${staffList.find(s => s._id === confirmDeleteId)?.name ?? 'this staff member'}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        isDangerous
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </PageContainer>
   );
 }

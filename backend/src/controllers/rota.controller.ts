@@ -8,16 +8,27 @@ import { AppError } from '../middleware/AppError';
 import { catchAsync } from '../middleware/catchAsync';
 import { CopyPreviousWeekInput } from '../validation/rota.schemas';
 
-// TypeScript interfaces for staff rota response
-interface StaffShift {
+// TypeScript interfaces for staff rota aggregation
+interface AggregatedShift {
   dayOfWeek: number;
-  shiftTemplateId: string;
+  shiftTemplateId: mongoose.Types.ObjectId | string;
 }
 
-interface StaffRotaResponse {
+interface AggregatedRota {
   weekStartDate: string;
   locationId: string;
-  shifts: StaffShift[];
+  templateId: string;
+  shifts: AggregatedShift[];
+}
+
+interface ShiftDetails {
+  startTime: string;
+  endTime: string;
+  roleRequired: string;
+}
+
+interface TemplateDay {
+  shifts: Array<{ _id?: mongoose.Types.ObjectId; id?: string; startTime: string; endTime: string; roleRequired: string }>;
 }
 
 // Create a new rota
@@ -79,11 +90,11 @@ export const updateRota = catchAsync(async (req: Request, res: Response) => {
     );
   }
 
-  const update: any = {};
+  const update: Record<string, unknown> = {};
   if (name !== undefined) update.name = name;
   if (status !== undefined) update.status = status;
   if (days !== undefined) update.days = days;
-  const rota = await Rota.findByIdAndUpdate(id, update, { returnDocument: 'after' });
+  const rota = await Rota.findByIdAndUpdate(id, update, { new: true });
   if (!rota) throw new AppError('Rota not found', 404);
   res.status(200).json({ success: true, data: rota });
 });
@@ -183,7 +194,7 @@ export const getStaffRotas = catchAsync(async (req: Request, res: Response) => {
 
   // Build aggregation pipeline
   // This is more efficient than loading all rotas and filtering in Node.js
-  const pipeline: any[] = [
+  const pipeline: mongoose.PipelineStage[] = [
     // Stage 1: Match only published rotas
     {
       $match: {
@@ -247,27 +258,21 @@ export const getStaffRotas = catchAsync(async (req: Request, res: Response) => {
   ];
 
   // Execute aggregation
-  console.log('Executing aggregation pipeline...');
-  const staffRotas = await Rota.aggregate<any>(pipeline);
-  console.log(`Found ${staffRotas.length} rotas for staff`);
+  const staffRotas = await Rota.aggregate<AggregatedRota>(pipeline);
 
   // Enrich shifts with template data
-  const templateIds = [...new Set(staffRotas.map((r: any) => r.templateId).filter(Boolean))];
-  console.log('Template IDs:', templateIds);
+  const templateIds = [...new Set(staffRotas.map(r => r.templateId).filter(Boolean))];
   const templateObjectIds = templateIds.map(id => new mongoose.Types.ObjectId(id));
-  console.log('Fetching templates...');
   const templates = await RotaTemplate.find({ _id: { $in: templateObjectIds } }).lean();
-  console.log(`Found ${templates.length} templates`);
-  console.log('First template days:', templates[0]?.days?.length || 0);
 
-  // Create a map of template ID to template for quick lookup
-  const templateMap = new Map();
+  // Create a map of template ID → shift ID → shift details
+  const templateMap = new Map<string, Map<string, ShiftDetails>>();
   templates.forEach(template => {
-    const shiftMap = new Map();
+    const shiftMap = new Map<string, ShiftDetails>();
     if (template.days && Array.isArray(template.days)) {
-      template.days.forEach((day: any) => {
+      (template.days as TemplateDay[]).forEach(day => {
         if (day.shifts && Array.isArray(day.shifts)) {
-          day.shifts.forEach((shift: any) => {
+          day.shifts.forEach(shift => {
             const shiftId = shift._id?.toString() || shift.id?.toString();
             if (shiftId) {
               shiftMap.set(shiftId, {
@@ -280,20 +285,15 @@ export const getStaffRotas = catchAsync(async (req: Request, res: Response) => {
         }
       });
     }
-    console.log(`Template ${template._id} has ${shiftMap.size} shifts in map`);
-    console.log('Shift IDs in template:', Array.from(shiftMap.keys()));
     templateMap.set(template._id.toString(), shiftMap);
   });
 
   // Enrich each shift with template data
-  const enrichedRotas = staffRotas.map((rota: any) => {
+  const enrichedRotas = staffRotas.map((rota: AggregatedRota) => {
     const shiftMap = templateMap.get(rota.templateId);
-    console.log(`Looking up template ${rota.templateId}, found map:`, shiftMap ? `${shiftMap.size} shifts` : 'NOT FOUND');
-    const enrichedShifts = rota.shifts.map((shift: any) => {
-      const shiftTemplateIdStr = shift.shiftTemplateId?.toString() || shift.shiftTemplateId;
-      console.log(`Looking for shift ${shiftTemplateIdStr} in template`);
-      const shiftDetails = shiftMap?.get(shiftTemplateIdStr) || {};
-      console.log('Found shift details:', shiftDetails);
+    const enrichedShifts = rota.shifts.map((shift: AggregatedShift) => {
+      const shiftTemplateIdStr = shift.shiftTemplateId?.toString();
+      const shiftDetails = (shiftTemplateIdStr && shiftMap?.get(shiftTemplateIdStr)) || {} as Partial<ShiftDetails>;
       return {
         dayOfWeek: shift.dayOfWeek,
         shiftTemplateId: shiftTemplateIdStr,

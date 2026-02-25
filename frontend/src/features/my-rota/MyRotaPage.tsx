@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useStaffRotas } from './useStaffRotas';
-import { transformRotasToWeeks, getUpcomingWeeksRange } from '@/utils/rotaUtils';
+import { transformRotasToWeeks } from '@/utils/rotaUtils';
 import { fetchLocations } from '@/services/location.service';
 import { Location } from '@/types/location';
 import { RotaList } from './components/RotaList';
@@ -12,7 +12,18 @@ interface MyRotaPageProps {
 }
 
 export const MyRotaPage: React.FC<MyRotaPageProps> = ({ staffId }) => {
-  const [dateRange] = useState(() => getUpcomingWeeksRange(8));
+  const [dateRange] = useState(() => {
+    // Go back 4 weeks so past rotas are fetched and can be shown greyed-out
+    const now = new Date();
+    const past = new Date(now);
+    past.setDate(now.getDate() - 28);
+    const future = new Date(now);
+    future.setDate(now.getDate() + 8 * 7);
+    return {
+      from: past.toISOString().split('T')[0],
+      to: future.toISOString().split('T')[0],
+    };
+  });
   const [locations, setLocations] = useState<Location[]>([]);
 
   useEffect(() => {
@@ -28,16 +39,29 @@ export const MyRotaPage: React.FC<MyRotaPageProps> = ({ staffId }) => {
   const weekGroups = useMemo(() => {
     if (!rotas || rotas.length === 0) return [];
     const weeks = transformRotasToWeeks(rotas);
-    return weeks.map(w => ({
-      ...w,
-      locationName: locations.find(l => l._id === w.locationId)?.name,
-    }));
+    return weeks.map(w => {
+      const weekEnd = new Date(w.weekStartDate);
+      weekEnd.setDate(weekEnd.getDate() + 6); // Sunday
+      weekEnd.setHours(23, 59, 59, 999);
+      return {
+        ...w,
+        locationName: locations.find(l => l._id === w.locationId)?.name,
+        isPast: new Date() > weekEnd,
+      };
+    }).sort((a, b) => {
+      // Active weeks first, past weeks last
+      if (a.isPast !== b.isPast) return a.isPast ? 1 : -1;
+      // Active: ascending (nearest first); Past: descending (most recently ended first)
+      const dir = a.isPast ? -1 : 1;
+      return dir * a.weekStartDate.localeCompare(b.weekStartDate);
+    });
   }, [rotas, locations]);
 
   const totals = useMemo(() => {
-    const totalHours = weekGroups.reduce((sum, week) => sum + week.totalHours, 0);
-    const totalShifts = weekGroups.reduce((sum, week) => sum + week.totalShifts, 0);
-    return { totalHours, totalShifts };
+    const activeWeeks = weekGroups.filter(w => !w.isPast);
+    const totalHours = activeWeeks.reduce((sum, week) => sum + week.totalHours, 0);
+    const totalShifts = activeWeeks.reduce((sum, week) => sum + week.totalShifts, 0);
+    return { totalHours, totalShifts, activeWeekCount: activeWeeks.length };
   }, [weekGroups]);
 
   return (
@@ -61,7 +85,7 @@ export const MyRotaPage: React.FC<MyRotaPageProps> = ({ staffId }) => {
           </div>
           <div className="flex flex-col items-center">
             <span className="text-xs text-gray-500 uppercase tracking-wide mb-1">Weeks</span>
-            <span className="text-2xl font-semibold text-gray-900">{weekGroups.length}</span>
+            <span className="text-2xl font-semibold text-gray-900">{totals.activeWeekCount}</span>
           </div>
           <div className="flex items-center">
             <button

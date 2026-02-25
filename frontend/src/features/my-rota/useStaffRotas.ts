@@ -58,9 +58,6 @@ export function useStaffRotas({ staffId, from, to }: UseStaffRotasParams): UseSt
       setError(null);
 
       const response = await fetchStaffRotas({ staffId, from, to });
-      console.log('ðŸ“Š Staff rotas response:', response);
-      console.log('ðŸ“Š Number of rotas:', response.rotas?.length);
-      console.log('ðŸ“Š First rota:', response.rotas?.[0]);
 
       // Only update state if component is still mounted
       if (isMountedRef.current) {

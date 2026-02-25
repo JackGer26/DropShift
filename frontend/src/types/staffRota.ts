@@ -33,6 +33,7 @@ export interface WeekGroup {
   weekStartDate: string;
   locationId: string;
   locationName?: string;
+  isPast?: boolean;
   days: DayGroup[];
   totalHours: number;
   totalShifts: number;

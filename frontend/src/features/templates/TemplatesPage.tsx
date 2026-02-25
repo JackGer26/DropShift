@@ -4,7 +4,7 @@ import { fetchLocations } from '@/services/location.service';
 import { RotaTemplate, DayTemplate } from '@/types/template';
 import { Location } from '@/types/location';
 import { TemplateBuilder } from './components/TemplateBuilder';
-import { Button, Card, EmptyState, FormField, Input, PageContainer, RoleBadge } from '@/ui';
+import { Button, Card, EmptyState, FormField, Input, Modal, PageContainer, RoleBadge } from '@/ui';
 
 const DAY_NAMES: Record<number, string> = {
   0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday',
@@ -19,13 +19,14 @@ const selectClass =
   'focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900';
 
 export function TemplatesPage() {
-  const [templates, setTemplates]         = useState<RotaTemplate[]>([]);
-  const [locations, setLocations]         = useState<Location[]>([]);
-  const [expandedId, setExpandedId]       = useState<string | null>(null);
-  const [name, setName]                   = useState('');
+  const [templates, setTemplates]             = useState<RotaTemplate[]>([]);
+  const [locations, setLocations]             = useState<Location[]>([]);
+  const [expandedId, setExpandedId]           = useState<string | null>(null);
+  const [name, setName]                       = useState('');
   const [selectedLocationId, setSelectedLocationId] = useState('');
-  const [showBuilder, setShowBuilder]     = useState(false);
-  const [builderDays, setBuilderDays]     = useState<DayTemplate[]>([]);
+  const [showBuilder, setShowBuilder]         = useState(false);
+  const [builderDays, setBuilderDays]         = useState<DayTemplate[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -57,8 +58,10 @@ export function TemplatesPage() {
     await loadTemplates();
   }
 
-  async function handleDelete(id: string) {
-    await deleteTemplate(id);
+  async function handleDelete() {
+    if (!confirmDeleteId) return;
+    await deleteTemplate(confirmDeleteId);
+    setConfirmDeleteId(null);
     await loadTemplates();
   }
 
@@ -72,10 +75,12 @@ export function TemplatesPage() {
           return (
             <div key={t._id}>
               {/* Row header — clickable */}
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => setExpandedId(isExpanded ? null : t._id)}
-                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+                onKeyDown={e => e.key === 'Enter' && setExpandedId(isExpanded ? null : t._id)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-2">
                   <svg
@@ -97,11 +102,11 @@ export function TemplatesPage() {
                 <Button
                   variant="danger"
                   size="sm"
-                  onClick={e => { e.stopPropagation(); handleDelete(t._id); }}
+                  onClick={e => { e.stopPropagation(); setConfirmDeleteId(t._id); }}
                 >
                   Delete
                 </Button>
-              </button>
+              </div>
 
               {/* Expanded detail */}
               {isExpanded && (
@@ -194,6 +199,16 @@ export function TemplatesPage() {
           </div>
         )}
       </Card>
+
+      <Modal
+        isOpen={confirmDeleteId !== null}
+        title="Delete template?"
+        message={`Are you sure you want to delete "${templates.find(t => t._id === confirmDeleteId)?.name ?? 'this template'}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        isDangerous
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </PageContainer>
   );
 }

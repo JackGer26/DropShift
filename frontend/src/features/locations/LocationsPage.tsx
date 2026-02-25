@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { fetchLocations, createLocation, updateLocation, deleteLocation } from '@/services/location.service';
 import { Location } from '@/types/location';
-import { Button, Card, EmptyState, FormField, Input, PageContainer } from '@/ui';
+import { Button, Card, EmptyState, FormField, Input, Modal, PageContainer } from '@/ui';
 
 export function LocationsPage() {
-  const [locations, setLocations] = useState<Location[]>([]);
-  const [name, setName]           = useState('');
-  const [address, setAddress]     = useState('');
+  const [locations, setLocations]             = useState<Location[]>([]);
+  const [name, setName]                       = useState('');
+  const [address, setAddress]                 = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -35,8 +36,10 @@ export function LocationsPage() {
     await load();
   }
 
-  async function handleDelete(id: string) {
-    await deleteLocation(id);
+  async function handleDelete() {
+    if (!confirmDeleteId) return;
+    await deleteLocation(confirmDeleteId);
+    setConfirmDeleteId(null);
     await load();
   }
 
@@ -63,7 +66,7 @@ export function LocationsPage() {
                 className="text-sm text-gray-500 border-b border-transparent hover:border-gray-300 focus:border-gray-500 focus:outline-none bg-transparent w-full sm:flex-1"
               />
             </div>
-            <Button variant="danger" size="sm" onClick={() => handleDelete(loc._id)}>
+            <Button variant="danger" size="sm" onClick={() => setConfirmDeleteId(loc._id)}>
               Delete
             </Button>
           </div>
@@ -101,6 +104,16 @@ export function LocationsPage() {
           <Button type="submit" variant="primary">Add Location</Button>
         </form>
       </Card>
+
+      <Modal
+        isOpen={confirmDeleteId !== null}
+        title="Delete location?"
+        message={`Are you sure you want to delete "${locations.find(l => l._id === confirmDeleteId)?.name ?? 'this location'}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        isDangerous
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
     </PageContainer>
   );
 }
