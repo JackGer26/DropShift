@@ -116,6 +116,7 @@ export const copyPreviousWeek = catchAsync(async (req: Request, res: Response) =
 
   // Create new rota by copying previous week's data
   const newRota = new Rota({
+    name: previousRota.name,
     locationId: previousRota.locationId,
     templateId: previousRota.templateId,
     weekStartDate: weekStartDate,

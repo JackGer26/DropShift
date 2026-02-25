@@ -5,6 +5,7 @@ import { StaffPage } from '@/features/staff-management';
 import { TemplatesPage } from '@/features/templates';
 import { RotaBuilderPage } from '@/features/rota-builder';
 import { MyRotaPage } from '@/features/my-rota';
+import { LocationsPage } from '@/features/locations';
 import { AppLayout } from '@/ui/AppLayout';
 
 function MyRotaPageWrapper() {
@@ -20,9 +21,11 @@ export function Router() {
         <Route index element={<DashboardPage />} />
         <Route path="staff" element={<StaffPage />} />
         <Route path="templates" element={<TemplatesPage />} />
+        <Route path="locations" element={<LocationsPage />} />
         <Route path="rota" element={<RotaBuilderPage />} />
-        <Route path="my-rota/:staffId" element={<MyRotaPageWrapper />} />
       </Route>
+      {/* Staff-facing page — no sidebar/header */}
+      <Route path="my-rota/:staffId" element={<MyRotaPageWrapper />} />
     </Routes>
   );
 }

@@ -10,11 +10,9 @@ import React from 'react';
  */
 export const LoadingState: React.FC = () => {
   return (
-    <div style={styles.container}>
-      <div style={styles.spinner}>
-        <div style={styles.spinnerCircle}></div>
-      </div>
-      <p style={styles.message}>Loading your schedule...</p>
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+      <div className="w-9 h-9 rounded-full border-4 border-gray-200 border-t-gray-900 animate-spin mb-4" />
+      <p className="text-sm text-gray-500">Loading your schedule...</p>
     </div>
   );
 };
@@ -29,12 +27,15 @@ interface ErrorStateProps {
 
 export const ErrorState: React.FC<ErrorStateProps> = ({ message, onRetry }) => {
   return (
-    <div style={styles.container}>
-      <div style={styles.errorIcon}>⚠️</div>
-      <h3 style={styles.errorTitle}>Unable to Load Schedule</h3>
-      <p style={styles.errorMessage}>{message}</p>
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+      <span className="text-4xl mb-4 opacity-70" aria-hidden="true">⚠️</span>
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">Unable to Load Schedule</h3>
+      <p className="text-sm text-gray-500 max-w-sm mx-auto mb-5">{message}</p>
       {onRetry && (
-        <button onClick={onRetry} style={styles.retryButton}>
+        <button
+          onClick={onRetry}
+          className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-md hover:bg-gray-800 transition-colors"
+        >
           Try Again
         </button>
       )}
@@ -52,102 +53,13 @@ interface EmptyStateProps {
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
   title = 'No Rotas Found',
-  message = 'You don\'t have any published rotas yet. Check back later or contact your manager.'
+  message = "You don't have any published rotas yet. Check back later or contact your manager.",
 }) => {
   return (
-    <div style={styles.container}>
-      <div style={styles.emptyIcon}>📅</div>
-      <h3 style={styles.emptyTitle}>{title}</h3>
-      <p style={styles.emptyMessage}>{message}</p>
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+      <span className="text-5xl mb-4 opacity-40" aria-hidden="true">📅</span>
+      <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
+      <p className="text-sm text-gray-500 max-w-sm mx-auto leading-relaxed">{message}</p>
     </div>
   );
 };
-
-const styles = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '60px 20px',
-    textAlign: 'center',
-  } as React.CSSProperties,
-
-  // Loading
-  spinner: {
-    marginBottom: '16px',
-  } as React.CSSProperties,
-  spinnerCircle: {
-    width: '40px',
-    height: '40px',
-    border: '4px solid #f3f3f3',
-    borderTop: '4px solid #2196F3',
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
-  } as React.CSSProperties,
-  message: {
-    fontSize: '16px',
-    color: '#666',
-    margin: 0,
-  } as React.CSSProperties,
-
-  // Error
-  errorIcon: {
-    fontSize: '48px',
-    marginBottom: '16px',
-  } as React.CSSProperties,
-  errorTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    color: '#d32f2f',
-    margin: '0 0 8px 0',
-  } as React.CSSProperties,
-  errorMessage: {
-    fontSize: '14px',
-    color: '#666',
-    marginBottom: '20px',
-    maxWidth: '400px',
-  } as React.CSSProperties,
-  retryButton: {
-    padding: '10px 24px',
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#fff',
-    backgroundColor: '#2196F3',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s',
-  } as React.CSSProperties,
-
-  // Empty
-  emptyIcon: {
-    fontSize: '64px',
-    marginBottom: '16px',
-    opacity: 0.5,
-  } as React.CSSProperties,
-  emptyTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    color: '#333',
-    margin: '0 0 8px 0',
-  } as React.CSSProperties,
-  emptyMessage: {
-    fontSize: '14px',
-    color: '#666',
-    maxWidth: '400px',
-    lineHeight: 1.5,
-  } as React.CSSProperties,
-};
-
-// Add CSS animation for spinner (in production, use CSS file)
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  `;
-  document.head.appendChild(style);
-}

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ShiftCard - Displays a single shift
  * Pure presentational component - no business logic
  */
@@ -9,63 +9,23 @@ import { formatTime } from '@/utils/rotaUtils';
 
 export const ShiftCard: React.FC<ShiftCardProps> = ({ shift }) => {
   return (
-    <div className="shift-card" style={styles.card}>
-      <div style={styles.timeRow}>
-        <span style={styles.time}>
+    <div className="border border-gray-200 rounded-lg p-3 bg-white">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-medium text-gray-800">
           {shift.startTime && formatTime(shift.startTime)}
-          {' - '}
+          {' – '}
           {shift.endTime && formatTime(shift.endTime)}
         </span>
-        <span style={styles.duration}>
+        <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
           {shift.durationHours}h
         </span>
       </div>
 
       {shift.roleRequired && (
-        <div style={styles.role}>
-          <span style={styles.roleLabel}>{shift.roleRequired}</span>
-        </div>
+        <span className="inline-block text-xs text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded mt-1">
+          {shift.roleRequired}
+        </span>
       )}
     </div>
   );
-};
-
-// Inline styles for simplicity - use CSS modules or styled-components in production
-const styles = {
-  card: {
-    border: '1px solid #e0e0e0',
-    borderRadius: '8px',
-    padding: '12px',
-    marginBottom: '8px',
-    backgroundColor: '#f9f9f9',
-  } as React.CSSProperties,
-  timeRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '6px',
-  } as React.CSSProperties,
-  time: {
-    fontSize: '14px',
-    fontWeight: 500,
-    color: '#333',
-  } as React.CSSProperties,
-  duration: {
-    fontSize: '12px',
-    fontWeight: 600,
-    color: '#4CAF50',
-    backgroundColor: '#e8f5e9',
-    padding: '2px 8px',
-    borderRadius: '4px',
-  } as React.CSSProperties,
-  role: {
-    marginTop: '4px',
-  } as React.CSSProperties,
-  roleLabel: {
-    fontSize: '12px',
-    color: '#666',
-    backgroundColor: '#e3f2fd',
-    padding: '2px 8px',
-    borderRadius: '4px',
-  } as React.CSSProperties,
 };

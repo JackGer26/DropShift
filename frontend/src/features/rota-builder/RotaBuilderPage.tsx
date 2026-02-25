@@ -411,6 +411,13 @@ export function RotaBuilderPage() {
   const isDraftEditable = rotaStatus === 'draft' && !isEditingDisabled;
   const isPublishedThisWeek = rotas.some(r => r.weekStartDate === weekStartDate && r.status === 'published');
 
+  // Filter staff pool to only those assigned to the current rota's location.
+  // Falls back to all staff when no template/location is selected.
+  const locationId = selectedTemplate?.locationId;
+  const locationStaff = locationId
+    ? staff.filter(s => (s.locationIds ?? []).includes(locationId))
+    : staff;
+
   // ─── Early returns ──────────────────────────────────────────────────────────
 
   if (loading) {
@@ -451,7 +458,7 @@ export function RotaBuilderPage() {
     if (!day) return null;
     const shift = day.shifts.find(s => (s.shiftTemplateId || s.id) === shiftTemplateId);
     if (!shift) return null;
-    const domainStaffList: DomainStaff[] = staff.map(s => ({ id: s._id, name: s.name, role: s.role, contractedHours: s.contractedHours }));
+    const domainStaffList: DomainStaff[] = locationStaff.map(s => ({ id: s._id, name: s.name, role: s.role, contractedHours: s.contractedHours }));
     const suggestions = getSuggestedStaff(shift, dayOfWeek, rotaDays, domainStaffList);
     const hoursMap = calculateWeeklyHours(rotaDays);
     return { shift, day, shiftTemplateId, suggestions, hoursMap };
@@ -459,7 +466,7 @@ export function RotaBuilderPage() {
 
   // Staff pool sidebar — draggable prop toggled by isDraftEditable
   const staffPanel = (
-    <Card title="Staff Pool" className="w-56 shrink-0">
+    <Card title="Staff Pool" className="w-full lg:w-56 lg:shrink-0">
       {suggestionData && suggestionData.suggestions.length > 0 && (
         <div className="mb-3 rounded-md bg-indigo-50 border border-indigo-200 p-2">
           <div className="flex items-center justify-between mb-2">
@@ -522,11 +529,13 @@ export function RotaBuilderPage() {
           </div>
         </div>
       )}
-      {staff.length === 0 ? (
-        <p className="text-xs text-gray-400 text-center">No staff found.</p>
+      {locationStaff.length === 0 ? (
+        <p className="text-xs text-gray-400 text-center">
+          {locationId ? 'No staff assigned to this location.' : 'No staff found.'}
+        </p>
       ) : (
         <div className="space-y-1.5 overflow-y-auto">
-          {staff.map(s => (
+          {locationStaff.map(s => (
             <StaffCard key={s._id} staff={s} draggable={isDraftEditable} />
           ))}
         </div>
@@ -541,7 +550,7 @@ export function RotaBuilderPage() {
         <div
           style={{ display: 'grid', gridTemplateColumns: `repeat(${rotaDays.length}, minmax(140px, 1fr))`, gap: '8px' }}
         >
-          {rotaDays.map(day => (
+          {[...rotaDays].sort((a, b) => (a.dayOfWeek === 0 ? 7 : a.dayOfWeek) - (b.dayOfWeek === 0 ? 7 : b.dayOfWeek)).map(day => (
             <DayColumn
               key={day.dayOfWeek}
               day={day}
@@ -560,7 +569,7 @@ export function RotaBuilderPage() {
 
   // Two-panel layout (staff pool + grid)
   const twoPanel = (
-    <div className="flex gap-4 min-h-0">
+    <div className="flex flex-col lg:flex-row gap-4 min-h-0">
       {staffPanel}
       <div className="flex-1 min-w-0">{rotaGrid}</div>
     </div>
@@ -584,7 +593,7 @@ export function RotaBuilderPage() {
       )}
 
       {/* ── Top bar: week navigation + status badge ── */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-5">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setWeekStartDate(getPreviousWeek(weekStartDate))}
@@ -764,21 +773,45 @@ export function RotaBuilderPage() {
             variant="success"
             disabled={rotaStatus === 'published'}
             title={rotaStatus === 'published' ? 'This rota is already published' : 'Publish this rota'}
-            onClick={async () => {
+            onClick={() => {
               if (!selectedRotaId) { addToast('warning', 'No rota selected to publish.'); return; }
-              try {
-                const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
-                if (!rota) { addToast('error', 'Selected rota not found.'); return; }
-                const payload = { ...rota, status: 'published' as 'published', weekStartDate };
-                await updateRotaApi(selectedRotaId, payload);
-                const rotasData = await fetchRotas(weekStartDate);
-                setRotas(rotasData);
-                const updatedRota = rotasData.find(r => (r.id || (r as any)._id) === selectedRotaId);
-                if (updatedRota) await loadRotaFromObject(updatedRota);
-                addToast('success', 'Rota published successfully.');
-              } catch (error) {
-                console.error('Failed to publish rota:', error);
-                addToast('error', 'Failed to publish rota. See console for details.');
+              const rota = rotas.find(r => (r.id || (r as any)._id) === selectedRotaId);
+              if (!rota) { addToast('error', 'Selected rota not found.'); return; }
+
+              const doPublish = async () => {
+                try {
+                  const payload = { ...rota, status: 'published' as 'published', weekStartDate };
+                  await updateRotaApi(selectedRotaId, payload);
+                  const rotasData = await fetchRotas(weekStartDate);
+                  setRotas(rotasData);
+                  const updatedRota = rotasData.find(r => (r.id || (r as any)._id) === selectedRotaId);
+                  if (updatedRota) await loadRotaFromObject(updatedRota);
+                  addToast('success', 'Rota published successfully.');
+                } catch (error) {
+                  console.error('Failed to publish rota:', error);
+                  addToast('error', 'Failed to publish rota. See console for details.');
+                }
+              };
+
+              const existingPublished = rotas.find(r =>
+                r.status === 'published' &&
+                r.weekStartDate === weekStartDate &&
+                r.locationId === rota.locationId &&
+                String(r.id || (r as any)._id) !== String(selectedRotaId)
+              );
+
+              if (existingPublished) {
+                const existingName = existingPublished.name
+                  ? `"${existingPublished.name}"`
+                  : 'the currently published rota';
+                showConfirm(
+                  'Replace Published Rota?',
+                  `${existingName} is already published for this week. Publishing this rota will unpublish it. Do you want to continue?`,
+                  doPublish,
+                  true
+                );
+              } else {
+                doPublish();
               }
             }}
           >
@@ -794,7 +827,7 @@ export function RotaBuilderPage() {
           {twoPanel}
           <DragOverlay>
             {activeId ? (() => {
-              const draggedStaff = staff.find(s => (s.id || s._id) === activeId);
+              const draggedStaff = locationStaff.find(s => (s.id || s._id) === activeId);
               return draggedStaff ? <StaffCard staff={draggedStaff} /> : null;
             })() : null}
           </DragOverlay>

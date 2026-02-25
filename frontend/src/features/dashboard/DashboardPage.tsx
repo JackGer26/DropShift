@@ -203,6 +203,9 @@ export function DashboardPage() {
               <Button variant="secondary" onClick={() => navigate('/templates')}>
                 Create Template
               </Button>
+              <Button variant="secondary" onClick={() => navigate('/locations')}>
+                Add Location
+              </Button>
             </div>
           </Card>
 

@@ -6,6 +6,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/rota':      'Rota Builder',
   '/staff':     'Staff Management',
   '/templates': 'Templates',
+  '/locations': 'Locations',
 };
 
 function getTitle(pathname: string): string {
@@ -13,11 +14,26 @@ function getTitle(pathname: string): string {
   return PAGE_TITLES[pathname] ?? 'ShiftDrop';
 }
 
-export function Header() {
+interface HeaderProps {
+  onMenuToggle: () => void;
+}
+
+export function Header({ onMenuToggle }: HeaderProps) {
   const { pathname } = useLocation();
 
   return (
-    <header className="h-14 shrink-0 border-b border-gray-200 bg-white flex items-center px-6">
+    <header className="h-14 shrink-0 border-b border-gray-200 bg-white flex items-center gap-3 px-4 sm:px-6">
+      {/* Hamburger — mobile only */}
+      <button
+        onClick={onMenuToggle}
+        className="lg:hidden p-1.5 rounded text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+        aria-label="Open menu"
+      >
+        <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
       <h1 className="text-sm font-medium text-gray-700">{getTitle(pathname)}</h1>
     </header>
   );

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { fetchTemplates, createTemplate, deleteTemplate } from '@/services/template.service';
+import { fetchLocations } from '@/services/location.service';
 import { RotaTemplate, DayTemplate } from '@/types/template';
+import { Location } from '@/types/location';
 import { TemplateBuilder } from './components/TemplateBuilder';
 import { Button, Card, EmptyState, FormField, Input, PageContainer, RoleBadge } from '@/ui';
 
@@ -12,17 +14,29 @@ function createEmptyDay(dayOfWeek: number): DayTemplate {
   return { dayOfWeek, shifts: [] };
 }
 
-// Set your default locationId here (should be a valid 24-char ObjectId)
-const DEFAULT_LOCATION_ID = '699094c87ec69da4f15fc047';
+const selectClass =
+  'text-sm border border-gray-300 rounded-md px-3 py-2 bg-white text-gray-800 ' +
+  'focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900';
 
 export function TemplatesPage() {
-  const [templates, setTemplates]     = useState<RotaTemplate[]>([]);
-  const [expandedId, setExpandedId]   = useState<string | null>(null);
-  const [name, setName]               = useState('');
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [builderDays, setBuilderDays] = useState<DayTemplate[]>([]);
+  const [templates, setTemplates]         = useState<RotaTemplate[]>([]);
+  const [locations, setLocations]         = useState<Location[]>([]);
+  const [expandedId, setExpandedId]       = useState<string | null>(null);
+  const [name, setName]                   = useState('');
+  const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [showBuilder, setShowBuilder]     = useState(false);
+  const [builderDays, setBuilderDays]     = useState<DayTemplate[]>([]);
 
-  useEffect(() => { loadTemplates(); }, []);
+  useEffect(() => { loadData(); }, []);
+
+  async function loadData() {
+    const [templateData, locationData] = await Promise.all([fetchTemplates(), fetchLocations()]);
+    setTemplates(templateData);
+    setLocations(locationData);
+    if (locationData.length > 0 && !selectedLocationId) {
+      setSelectedLocationId(locationData[0]._id);
+    }
+  }
 
   async function loadTemplates() {
     const data = await fetchTemplates();
@@ -36,7 +50,7 @@ export function TemplatesPage() {
   }
 
   async function handleSaveTemplate() {
-    await createTemplate({ name, locationId: DEFAULT_LOCATION_ID, days: builderDays });
+    await createTemplate({ name, locationId: selectedLocationId, days: builderDays });
     setName('');
     setShowBuilder(false);
     setBuilderDays([]);
@@ -70,7 +84,12 @@ export function TemplatesPage() {
                   >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>
-                  <span className="text-sm font-medium text-gray-800">{t.name}</span>
+                  <span className="text-sm font-medium text-gray-800 truncate max-w-[180px] sm:max-w-xs">{t.name}</span>
+                  {t.locationId && (
+                    <span className="text-xs text-gray-400">
+                      {locations.find(l => l._id === t.locationId)?.name ?? t.locationId}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-400">
                     {activeDays.length} day{activeDays.length !== 1 ? 's' : ''}
                   </span>
@@ -138,9 +157,28 @@ export function TemplatesPage() {
                 required
               />
             </FormField>
+            <FormField label="Location" htmlFor="template-location">
+              {locations.length === 0 ? (
+                <p className="text-xs text-amber-600 py-2">
+                  No locations found. <a href="/locations" className="underline">Add one first.</a>
+                </p>
+              ) : (
+                <select
+                  id="template-location"
+                  value={selectedLocationId}
+                  onChange={e => setSelectedLocationId(e.target.value)}
+                  className={selectClass}
+                  required
+                >
+                  {locations.map(loc => (
+                    <option key={loc._id} value={loc._id}>{loc.name}</option>
+                  ))}
+                </select>
+              )}
+            </FormField>
             <div className="flex flex-col space-y-1">
               <span className="text-sm font-medium text-gray-700 invisible" aria-hidden="true">&#8203;</span>
-              <Button type="submit" variant="primary">Create Template</Button>
+              <Button type="submit" variant="primary" disabled={locations.length === 0}>Create Template</Button>
               <div className="min-h-[1.25rem]" />
             </div>
           </form>
