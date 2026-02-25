@@ -2,6 +2,8 @@
 
 A full-stack workforce scheduling and rota management platform built for hospitality and retail businesses. Managers can build weekly rotas, manage staff and locations, and publish schedules — while staff access a clean, mobile-optimised personal schedule view with no admin access.
 
+![ShiftDrop Preview](.github/3.png)
+
 **Link to project:** [https://shiftdrop.netlify.app/login](https://shiftdrop.netlify.app/login)
 
 ---
